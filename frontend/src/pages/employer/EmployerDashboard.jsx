@@ -34,7 +34,13 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Alert
+  Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails
 } from '@mui/material'
 import {
   Dashboard,
@@ -58,7 +64,9 @@ import {
   CalendarToday,
   Close,
   MoreVert,
-  Block
+  Block,
+  Schedule,
+  Event
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { jobAPI, applicationAPI, roleUtils, userAPI } from '../../api/apiService.js'
@@ -370,6 +378,11 @@ function MyJobPostings() {
   const [editLoading, setEditLoading] = useState(false)
   const [editMessage, setEditMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [applicantsModal, setApplicantsModal] = useState({ open: false, job: null, applicants: [] })
+  const [applicantsLoading, setApplicantsLoading] = useState(false)
+  const [applicationStatuses, setApplicationStatuses] = useState([])
+  const [interviewModal, setInterviewModal] = useState({ open: false, application: null, interviewData: null })
+  const [interviewLoading, setInterviewLoading] = useState(false)
 
   useEffect(() => {
       const loadJobs = async () => {
@@ -386,7 +399,26 @@ function MyJobPostings() {
     }
   }
 
+    const loadApplicationStatuses = async () => {
+      try {
+        const statuses = await applicationAPI.getApplicationStatuses()
+        setApplicationStatuses(statuses || [])
+      } catch (error) {
+        console.error('Failed to load application statuses:', error)
+        // Fallback to hardcoded statuses if API fails
+        setApplicationStatuses([
+          'RECEIVED',
+          'UNDER_REVIEW', 
+          'INTERVIEW_SCHEDULED',
+          'OFFERED',
+          'REJECTED',
+          'WITHDRAWN'
+        ])
+      }
+    }
+
     loadJobs()
+    loadApplicationStatuses()
   }, [])
 
   const filteredJobs = jobs.filter(job => 
@@ -408,8 +440,8 @@ function MyJobPostings() {
       jobType: job.jobType || 'FULL_TIME',
       location: job.location || '',
       status: job.status || 'ACTIVE',
-      salary: job.minSalary && job.maxSalary ? 
-        `${job.minSalary}-${job.maxSalary}` : '',
+      minSalary: job.minSalary || '',
+      maxSalary: job.maxSalary || '',
       requirements: job.requiredSkills || []
     }
     setEditJobModal({ open: true, job, formData })
@@ -430,12 +462,36 @@ function MyJobPostings() {
       setEditLoading(true)
       setEditMessage('')
       
-      await jobAPI.updateJob(editJobModal.job.id, editJobModal.formData)
+      // Transform form data to match API expectations
+      const updateData = {
+        jobTitle: editJobModal.formData.jobTitle,
+        companyName: editJobModal.formData.companyName,
+        description: editJobModal.formData.description,
+        jobType: editJobModal.formData.jobType,
+        location: editJobModal.formData.location,
+        status: editJobModal.formData.status,
+        minSalary: editJobModal.formData.minSalary ? parseFloat(editJobModal.formData.minSalary) : null,
+        maxSalary: editJobModal.formData.maxSalary ? parseFloat(editJobModal.formData.maxSalary) : null,
+        requirements: editJobModal.formData.requirements || []
+      }
+      
+      await jobAPI.updateJob(editJobModal.job.id, updateData)
       
       // Update the job in the local state
       setJobs(prev => prev.map(job => 
         job.id === editJobModal.job.id 
-          ? { ...job, ...editJobModal.formData }
+          ? { 
+              ...job, 
+              title: updateData.jobTitle,
+              companyName: updateData.companyName,
+              description: updateData.description,
+              jobType: updateData.jobType,
+              location: updateData.location,
+              status: updateData.status,
+              minSalary: updateData.minSalary,
+              maxSalary: updateData.maxSalary,
+              requiredSkills: updateData.requirements
+            }
           : job
       ))
       
@@ -450,22 +506,169 @@ function MyJobPostings() {
     }
   }
 
-  const handleViewApplicants = (job) => {
-    // Navigate to applicants page for this specific job
-    // This would need to be implemented with routing
-    console.log('Navigate to applicants for job:', job.id)
+  const handleViewApplicants = async (job) => {
+    try {
+      setApplicantsLoading(true)
+      setApplicantsModal({ open: true, job, applicants: [] })
+      
+      // Load applicants for this job
+      const applicants = await applicationAPI.getJobApplicationsWithUserDetails(job.id)
+      setApplicantsModal({ open: true, job, applicants: applicants || [] })
+    } catch (error) {
+      console.error('Failed to load applicants:', error)
+      setApplicantsModal({ open: true, job, applicants: [] })
+    } finally {
+      setApplicantsLoading(false)
+    }
+  }
+
+  const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
+    try {
+      await applicationAPI.updateApplicationStatus(applicationId, newStatus)
+      
+      // Update the application status in the local state
+      setApplicantsModal(prev => ({
+        ...prev,
+        applicants: prev.applicants.map(app => 
+          app.id === applicationId 
+            ? { ...app, status: newStatus }
+            : app
+        )
+      }))
+      
+      setSuccessMessage('Application status updated successfully!')
+    } catch (error) {
+      console.error('Failed to update application status:', error)
+      setEditMessage('Failed to update application status: ' + error.message)
+      
+      // If backend is not available, just update the status locally
+      if (error.message.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        setApplicantsModal(prev => ({
+          ...prev,
+          applicants: prev.applicants.map(app => 
+            app.id === applicationId 
+              ? { ...app, status: newStatus }
+              : app
+          )
+        }))
+        setSuccessMessage('Application status updated locally (backend not available)')
+      }
+    }
+  }
+
+  const handleScheduleInterview = (application) => {
+    setInterviewModal({
+      open: true,
+      application,
+      interviewData: {
+        jobPostingId: application.jobPostingId,
+        scheduledDateTime: '',
+        location: '',
+        interviewType: 'IN_PERSON',
+        notes: ''
+      }
+    })
+  }
+
+  const handleInterviewFormChange = (field, value) => {
+    setInterviewModal(prev => ({
+      ...prev,
+      interviewData: {
+        ...prev.interviewData,
+        [field]: value
+      }
+    }))
+  }
+
+  const handleSaveInterview = async () => {
+    try {
+      setInterviewLoading(true)
+      
+      await applicationAPI.scheduleInterview(
+        interviewModal.application.id,
+        interviewModal.interviewData
+      )
+      
+      // Update the application status in the local state
+      setApplicantsModal(prev => ({
+        ...prev,
+        applicants: prev.applicants.map(app => 
+          app.id === interviewModal.application.id 
+            ? { ...app, status: 'INTERVIEW_SCHEDULED' }
+            : app
+        )
+      }))
+      
+      setInterviewModal({ open: false, application: null, interviewData: null })
+      setSuccessMessage('Interview scheduled successfully!')
+    } catch (error) {
+      console.error('Failed to schedule interview:', error)
+      setEditMessage('Failed to schedule interview: ' + error.message)
+    } finally {
+      setInterviewLoading(false)
+    }
+  }
+
+  const handleScheduleInterviewWithDateTime = async (application) => {
+    try {
+      const interviewData = {
+        jobPostingId: application.jobPostingId,
+        scheduledDateTime: application.interviewDateTime,
+        location: 'To be confirmed',
+        interviewType: 'IN_PERSON',
+        notes: 'Interview scheduled via status update'
+      }
+      
+      await applicationAPI.scheduleInterview(application.id, interviewData)
+      
+      // Update the application status and hide the date picker
+      setApplicantsModal(prev => ({
+        ...prev,
+        applicants: prev.applicants.map(app => 
+          app.id === application.id 
+            ? { ...app, status: 'INTERVIEW_SCHEDULED', showDateTimePicker: false, interviewDateTime: '' }
+            : app
+        )
+      }))
+      
+      setSuccessMessage('Interview scheduled successfully!')
+    } catch (error) {
+      console.error('Failed to schedule interview:', error)
+      setEditMessage('Failed to schedule interview: ' + error.message)
+      
+      // If backend is not available, just update the status locally
+      if (error.message.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        setApplicantsModal(prev => ({
+          ...prev,
+          applicants: prev.applicants.map(app => 
+            app.id === application.id 
+              ? { ...app, status: 'INTERVIEW_SCHEDULED', showDateTimePicker: false, interviewDateTime: '' }
+              : app
+          )
+        }))
+        setSuccessMessage('Interview status updated locally (backend not available)')
+      }
+    }
   }
 
   const handleJobAction = async (job, action) => {
     try {
       switch (action) {
         case 'deactivate':
-          // API call to deactivate job
-          console.log('Deactivating job:', job.id)
+          await jobAPI.updateJobStatus(job.id, 'INACTIVE')
+          // Update job status in local state
+          setJobs(prev => prev.map(j => 
+            j.id === job.id ? { ...j, status: 'INACTIVE' } : j
+          ))
+          setSuccessMessage('Job deactivated successfully!')
           break
         case 'hold':
-          // API call to hold job
-          console.log('Holding job:', job.id)
+          await jobAPI.updateJobStatus(job.id, 'HOLD')
+          // Update job status in local state
+          setJobs(prev => prev.map(j => 
+            j.id === job.id ? { ...j, status: 'HOLD' } : j
+          ))
+          setSuccessMessage('Job put on hold successfully!')
           break
         case 'delete':
           setDeleteConfirm({ open: true, job })
@@ -475,18 +678,20 @@ function MyJobPostings() {
       }
     } catch (error) {
       console.error('Failed to perform job action:', error)
+      setEditMessage('Failed to perform job action: ' + error.message)
     }
   }
 
   const confirmDelete = async () => {
     try {
-      // API call to delete job
-      console.log('Deleting job:', deleteConfirm.job.id)
+      await jobAPI.deleteJob(deleteConfirm.job.id)
       // Remove job from list
       setJobs(prev => prev.filter(job => job.id !== deleteConfirm.job.id))
       setDeleteConfirm({ open: false, job: null })
+      setSuccessMessage('Job deleted successfully!')
     } catch (error) {
       console.error('Failed to delete job:', error)
+      setEditMessage('Failed to delete job: ' + error.message)
     }
   }
 
@@ -540,6 +745,14 @@ function MyJobPostings() {
         <AnimatedBox animation="fadeInUp" delay={0.1} sx={{ mb: 3 }}>
           <Alert severity="success" onClose={() => setSuccessMessage('')}>
             {successMessage}
+          </Alert>
+        </AnimatedBox>
+      )}
+
+      {editMessage && (
+        <AnimatedBox animation="fadeInUp" delay={0.1} sx={{ mb: 3 }}>
+          <Alert severity="error" onClose={() => setEditMessage('')}>
+            {editMessage}
           </Alert>
         </AnimatedBox>
       )}
@@ -734,50 +947,53 @@ function MyJobPostings() {
             <Box sx={{ pt: 1 }}>
               <Grid container spacing={3}>
                 <Grid item xs={12}>
-                  <Typography variant="h5" sx={{ fontWeight: 600, mb: 2 }}>
+                  <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
                     {viewJobModal.job.title}
                   </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="body2" color="text.secondary">Company</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {viewJobModal.job.company || 'N/A'}
+                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                    {viewJobModal.job.companyName || viewJobModal.job.company} • {viewJobModal.job.location}
                   </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="body2" color="text.secondary">Location</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {viewJobModal.job.location}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="body2" color="text.secondary">Job Type</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {viewJobModal.job.jobType}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="body2" color="text.secondary">Status</Typography>
-                  <Chip
-                    label={viewJobModal.job.status}
+                  <Chip 
+                    label={viewJobModal.job.status} 
                     color={getStatusColor(viewJobModal.job.status)}
+                    size="small"
                     sx={{ mb: 2 }}
                   />
                 </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="body2" color="text.secondary">Description</Typography>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Job Type</Typography>
                   <Typography variant="body1" sx={{ mb: 2 }}>
+                    {viewJobModal.job.jobType?.replace('_', ' ') || 'N/A'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Posted Date</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {formatDate(viewJobModal.job.postedDate)}
+                  </Typography>
+                </Grid>
+                {viewJobModal.job.minSalary && viewJobModal.job.maxSalary && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Salary Range</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                      ${viewJobModal.job.minSalary.toLocaleString()} - ${viewJobModal.job.maxSalary.toLocaleString()}
+                  </Typography>
+                </Grid>
+                )}
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Description</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
                     {viewJobModal.job.description}
                   </Typography>
                 </Grid>
                 {viewJobModal.job.requiredSkills && viewJobModal.job.requiredSkills.length > 0 && (
                   <Grid item xs={12}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
                       Required Skills
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                       {viewJobModal.job.requiredSkills.map((skill, index) => (
-                        <Chip key={index} label={skill} size="small" />
+                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
                       ))}
     </Box>
                   </Grid>
@@ -796,7 +1012,7 @@ function MyJobPostings() {
       {/* Edit Job Modal */}
       <Dialog
         open={editJobModal.open}
-        onClose={() => setEditJobModal({ open: false, job: null })}
+        onClose={() => setEditJobModal({ open: false, job: null, formData: null })}
         maxWidth="md"
         fullWidth
       >
@@ -806,20 +1022,424 @@ function MyJobPostings() {
           </Typography>
         </DialogTitle>
         <DialogContent>
-          {editJobModal.job && (
+          {editJobModal.formData && (
             <Box sx={{ pt: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Edit functionality will be implemented here. This would include form fields for updating job details.
+              <Grid container spacing={3}>
+                {/* Job Title */}
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Job Title"
+                    value={editJobModal.formData.jobTitle}
+                    onChange={(e) => handleEditFormChange('jobTitle', e.target.value)}
+                    required
+                  />
+                </Grid>
+
+                {/* Company Name */}
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Company Name"
+                    value={editJobModal.formData.companyName}
+                    onChange={(e) => handleEditFormChange('companyName', e.target.value)}
+                    required
+                  />
+                </Grid>
+
+                {/* Job Description */}
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Job Description"
+                    value={editJobModal.formData.description}
+                    onChange={(e) => handleEditFormChange('description', e.target.value)}
+                    multiline
+                    rows={4}
+                    required
+                  />
+                </Grid>
+
+                {/* Job Type and Location */}
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Job Type</InputLabel>
+                    <Select
+                      value={editJobModal.formData.jobType}
+                      onChange={(e) => handleEditFormChange('jobType', e.target.value)}
+                      label="Job Type"
+                    >
+                      <MenuItem value="FULL_TIME">Full Time</MenuItem>
+                      <MenuItem value="PART_TIME">Part Time</MenuItem>
+                      <MenuItem value="CONTRACT">Contract</MenuItem>
+                      <MenuItem value="INTERNSHIP">Internship</MenuItem>
+                      <MenuItem value="TEMPORARY">Temporary</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Location"
+                    value={editJobModal.formData.location}
+                    onChange={(e) => handleEditFormChange('location', e.target.value)}
+                    required
+                  />
+                </Grid>
+
+                {/* Salary Range */}
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Minimum Salary"
+                    type="number"
+                    value={editJobModal.formData.minSalary || ''}
+                    onChange={(e) => handleEditFormChange('minSalary', e.target.value)}
+                    placeholder="50000"
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Maximum Salary"
+                    type="number"
+                    value={editJobModal.formData.maxSalary || ''}
+                    onChange={(e) => handleEditFormChange('maxSalary', e.target.value)}
+                    placeholder="80000"
+                  />
+                </Grid>
+
+                {/* Status */}
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Status</InputLabel>
+                    <Select
+                      value={editJobModal.formData.status}
+                      onChange={(e) => handleEditFormChange('status', e.target.value)}
+                      label="Status"
+                    >
+                      <MenuItem value="ACTIVE">Active</MenuItem>
+                      <MenuItem value="INACTIVE">Inactive</MenuItem>
+                      <MenuItem value="HOLD">Hold</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                {/* Required Skills */}
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Required Skills
               </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                    {editJobModal.formData.requirements?.map((skill, index) => (
+                      <Chip
+                        key={index}
+                        label={skill}
+                        onDelete={() => {
+                          const newRequirements = editJobModal.formData.requirements.filter((_, i) => i !== index)
+                          handleEditFormChange('requirements', newRequirements)
+                        }}
+                        deleteIcon={<Close />}
+                        color="primary"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                  <Stack direction="row" spacing={1}>
+                    <TextField
+                      label="Add Skill"
+                      size="small"
+                      sx={{ flexGrow: 1 }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          const newSkill = e.target.value.trim()
+                          if (newSkill && !editJobModal.formData.requirements?.includes(newSkill)) {
+                            const newRequirements = [...(editJobModal.formData.requirements || []), newSkill]
+                            handleEditFormChange('requirements', newRequirements)
+                            e.target.value = ''
+                          }
+                        }
+                      }}
+                    />
+                  </Stack>
+                </Grid>
+
+                {/* Error/Success Messages */}
+                {editMessage && (
+                  <Grid item xs={12}>
+                    <Alert severity={editMessage.includes('successfully') ? 'success' : 'error'}>
+                      {editMessage}
+                    </Alert>
+                  </Grid>
+                )}
+              </Grid>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditJobModal({ open: false, job: null })}>
+          <Button 
+            onClick={() => setEditJobModal({ open: false, job: null, formData: null })}
+            disabled={editLoading}
+          >
             Cancel
           </Button>
-          <Button variant="contained">
-            Save Changes
+          <Button 
+            variant="contained" 
+            onClick={handleEditSave}
+            disabled={editLoading || !editJobModal.formData?.jobTitle || !editJobModal.formData?.description}
+          >
+            {editLoading ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Applicants Modal */}
+      <Dialog
+        open={applicantsModal.open}
+        onClose={() => setApplicantsModal({ open: false, job: null, applicants: [] })}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Applicants for {applicantsModal.job?.title}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {applicantsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : applicantsModal.applicants.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                No applicants found for this job posting.
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Applicant Name</TableCell>
+                    <TableCell>Email</TableCell>
+                    <TableCell>Phone</TableCell>
+                    <TableCell>Application Date</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {applicantsModal.applicants.map((application, index) => (
+                    <TableRow key={application.id || index}>
+                      <TableCell>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Avatar sx={{ width: 32, height: 32 }}>
+                            {application.user?.firstName?.charAt(0) || 'U'}
+                          </Avatar>
+                          <Typography variant="body2">
+                            {application.user?.firstName} {application.user?.lastName}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>{application.user?.email || 'N/A'}</TableCell>
+                      <TableCell>{application.user?.phone || 'N/A'}</TableCell>
+                      <TableCell>{formatDate(application.applicationDate)}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={application.status} 
+                          color={getApplicationStatusColor(application.status)}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={1}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => {
+                              // Handle view applicant details
+                              console.log('View applicant:', application.user?.id)
+                            }}
+                          >
+                            View
+                          </Button>
+                          <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <Select
+                              value={application.status}
+                              onChange={(e) => {
+                                const newStatus = e.target.value
+                                if (newStatus === 'INTERVIEW_SCHEDULED') {
+                                  // Show date/time picker inline
+                                  setApplicantsModal(prev => ({
+                                    ...prev,
+                                    applicants: prev.applicants.map(app => 
+                                      app.id === application.id 
+                                        ? { ...app, status: newStatus, showDateTimePicker: true }
+                                        : app
+                                    )
+                                  }))
+                                } else {
+                                  handleUpdateApplicationStatus(application.id, newStatus)
+                                }
+                              }}
+                            >
+                              {applicationStatuses.map((status) => (
+                                <MenuItem key={status} value={status}>
+                                  {status.replace('_', ' ')}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Stack>
+                        {application.showDateTimePicker && (
+                          <Box sx={{ mt: 1 }}>
+                            <TextField
+                              size="small"
+                              type="datetime-local"
+                              label="Interview Date & Time"
+                              value={application.interviewDateTime || ''}
+                              onChange={(e) => {
+                                setApplicantsModal(prev => ({
+                                  ...prev,
+                                  applicants: prev.applicants.map(app => 
+                                    app.id === application.id 
+                                      ? { ...app, interviewDateTime: e.target.value }
+                                      : app
+                                  )
+                                }))
+                              }}
+                              InputLabelProps={{ shrink: true }}
+                              sx={{ minWidth: 200 }}
+                            />
+                            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                onClick={() => handleScheduleInterviewWithDateTime(application)}
+                                disabled={!application.interviewDateTime}
+                              >
+                                Schedule
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => {
+                                  setApplicantsModal(prev => ({
+                                    ...prev,
+                                    applicants: prev.applicants.map(app => 
+                                      app.id === application.id 
+                                        ? { ...app, showDateTimePicker: false, interviewDateTime: '' }
+                                        : app
+                                    )
+                                  }))
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </Stack>
+                          </Box>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApplicantsModal({ open: false, job: null, applicants: [] })}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Interview Scheduling Modal */}
+      <Dialog
+        open={interviewModal.open}
+        onClose={() => setInterviewModal({ open: false, application: null, interviewData: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Schedule Interview
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Schedule interview for {interviewModal.application?.user?.firstName} {interviewModal.application?.user?.lastName}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {interviewModal.interviewData && (
+            <Box sx={{ pt: 1 }}>
+              <Grid container spacing={3}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Date & Time"
+                    type="datetime-local"
+                    value={interviewModal.interviewData.scheduledDateTime}
+                    onChange={(e) => handleInterviewFormChange('scheduledDateTime', e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    required
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Interview Type</InputLabel>
+                    <Select
+                      value={interviewModal.interviewData.interviewType}
+                      onChange={(e) => handleInterviewFormChange('interviewType', e.target.value)}
+                      label="Interview Type"
+                    >
+                      <MenuItem value="IN_PERSON">In Person</MenuItem>
+                      <MenuItem value="VIDEO_CALL">Video Call</MenuItem>
+                      <MenuItem value="PHONE">Phone</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Location/Meeting Link"
+                    value={interviewModal.interviewData.location}
+                    onChange={(e) => handleInterviewFormChange('location', e.target.value)}
+                    placeholder={interviewModal.interviewData.interviewType === 'IN_PERSON' ? 'Office address' : 'Meeting link or phone number'}
+                    required
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Notes"
+                    value={interviewModal.interviewData.notes}
+                    onChange={(e) => handleInterviewFormChange('notes', e.target.value)}
+                    multiline
+                    rows={3}
+                    placeholder="Additional notes for the candidate..."
+                  />
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setInterviewModal({ open: false, application: null, interviewData: null })}
+            disabled={interviewLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleSaveInterview}
+            disabled={interviewLoading || !interviewModal.interviewData?.scheduledDateTime || !interviewModal.interviewData?.location}
+          >
+            {interviewLoading ? 'Scheduling...' : 'Schedule Interview'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1231,6 +1851,9 @@ function ListNewVacancy() {
 function ViewApplicants() {
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
+  const [applicationStatuses, setApplicationStatuses] = useState([])
+  const [profileModal, setProfileModal] = useState({ open: false, applicant: null })
+  const [contactModal, setContactModal] = useState({ open: false, applicant: null })
   const [filters, setFilters] = useState({
     status: 'All Statuses',
     job: 'All Jobs'
@@ -1266,7 +1889,26 @@ function ViewApplicants() {
       }
     }
 
+    const loadApplicationStatuses = async () => {
+      try {
+        const statuses = await applicationAPI.getApplicationStatuses()
+        setApplicationStatuses(statuses || [])
+      } catch (error) {
+        console.error('Failed to load application statuses:', error)
+        // Fallback to hardcoded statuses if API fails
+        setApplicationStatuses([
+          'RECEIVED',
+          'UNDER_REVIEW', 
+          'INTERVIEW_SCHEDULED',
+          'OFFERED',
+          'REJECTED',
+          'WITHDRAWN'
+        ])
+      }
+    }
+
     loadApplications()
+    loadApplicationStatuses()
   }, [])
 
   const filteredApplications = applications.filter(app => {
@@ -1280,6 +1922,119 @@ function ViewApplicants() {
 
   const totalApplications = applications.length
   const filteredCount = filteredApplications.length
+
+  const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
+    try {
+      await applicationAPI.updateApplicationStatus(applicationId, newStatus)
+      
+      // Update the application status in the local state
+      setApplications(prev => prev.map(app => {
+        const appId = app.application?.id || app.id
+        if (appId === applicationId) {
+          return {
+            ...app,
+            application: {
+              ...app.application,
+              status: newStatus
+            }
+          }
+        }
+        return app
+      }))
+      
+      // Show success message (you can add a state for this)
+      console.log('Application status updated successfully!')
+    } catch (error) {
+      console.error('Failed to update application status:', error)
+      // If backend is not available, just update the status locally
+      if (error.message.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        setApplications(prev => prev.map(app => {
+          const appId = app.application?.id || app.id
+          if (appId === applicationId) {
+            return {
+              ...app,
+              application: {
+                ...app.application,
+                status: newStatus
+              }
+            }
+          }
+          return app
+        }))
+        console.log('Application status updated locally (backend not available)')
+      }
+    }
+  }
+
+  const handleScheduleInterviewWithDateTime = async (application) => {
+    try {
+      const interviewData = {
+        jobPostingId: application.jobPostingId || application.application?.jobPostingId,
+        scheduledDateTime: application.interviewDateTime,
+        location: 'To be confirmed',
+        interviewType: 'IN_PERSON',
+        notes: 'Interview scheduled via status update'
+      }
+      
+      await applicationAPI.scheduleInterview(application.application?.id || application.id, interviewData)
+      
+      // Update the application status and hide the date picker
+      setApplications(prev => prev.map(app => {
+        const appId = app.application?.id || app.id
+        const currentAppId = application.application?.id || application.id
+        if (appId === currentAppId) {
+          return {
+            ...app,
+            application: {
+              ...app.application,
+              status: 'INTERVIEW_SCHEDULED'
+            },
+            showDateTimePicker: false,
+            interviewDateTime: ''
+          }
+        }
+        return app
+      }))
+      
+      console.log('Interview scheduled successfully!')
+    } catch (error) {
+      console.error('Failed to schedule interview:', error)
+      // If backend is not available, just update the status locally
+      if (error.message.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        setApplications(prev => prev.map(app => {
+          const appId = app.application?.id || app.id
+          const currentAppId = application.application?.id || application.id
+          if (appId === currentAppId) {
+            return {
+              ...app,
+              application: {
+                ...app.application,
+                status: 'INTERVIEW_SCHEDULED'
+              },
+              showDateTimePicker: false,
+              interviewDateTime: ''
+            }
+          }
+          return app
+        }))
+        console.log('Interview status updated locally (backend not available)')
+      }
+    }
+  }
+
+  const handleViewProfile = (applicant) => {
+    setProfileModal({
+      open: true,
+      applicant
+    })
+  }
+
+  const handleContact = (applicant) => {
+    setContactModal({
+      open: true,
+      applicant
+    })
+  }
 
   // Helper function to get application status color
   const getApplicationStatusColor = (status) => {
@@ -1525,19 +2280,44 @@ function ViewApplicants() {
                       </Box>
                     )}
 
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<KeyboardArrowDown />}
-                        sx={{ minWidth: 100 }}
-                      >
-                        {application.application?.status === 'OFFERED' ? 'Offered' : 'Review'}
-                      </Button>
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, alignItems: 'center' }}>
+                      <FormControl size="small" sx={{ minWidth: 120 }}>
+                        <Select
+                          value={application.application?.status || application.status || 'RECEIVED'}
+                          onChange={(e) => {
+                            const newStatus = e.target.value
+                            if (newStatus === 'INTERVIEW_SCHEDULED') {
+                              // Show date/time picker inline
+                              setApplications(prev => prev.map(app => {
+                                const appId = app.application?.id || app.id
+                                const currentAppId = application.application?.id || application.id
+                                if (appId === currentAppId) {
+                                  return { 
+                                    ...app, 
+                                    application: { ...app.application, status: newStatus },
+                                    showDateTimePicker: true 
+                                  }
+                                }
+                                return app
+                              }))
+                            } else {
+                              handleUpdateApplicationStatus(application.application?.id || application.id, newStatus)
+                            }
+                          }}
+                          sx={{ minWidth: 120 }}
+                        >
+                          {applicationStatuses.map((status) => (
+                            <MenuItem key={status} value={status}>
+                              {status.replace('_', ' ')}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
                       <Button
                         size="small"
                         variant="outlined"
                         startIcon={<Visibility />}
+                        onClick={() => handleViewProfile(application)}
                       >
                         View Profile
                       </Button>
@@ -1545,10 +2325,66 @@ function ViewApplicants() {
                         size="small"
                         variant="outlined"
                         startIcon={<Edit />}
+                        onClick={() => handleContact(application)}
                       >
                         Contact
                       </Button>
                     </Box>
+                    {application.showDateTimePicker && (
+                      <Box sx={{ mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                          Schedule Interview
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                          <TextField
+                            size="small"
+                            type="datetime-local"
+                            label="Interview Date & Time"
+                            value={application.interviewDateTime || ''}
+                            onChange={(e) => {
+                              setApplications(prev => prev.map(app => {
+                                const appId = app.application?.id || app.id
+                                const currentAppId = application.application?.id || application.id
+                                if (appId === currentAppId) {
+                                  return { ...app, interviewDateTime: e.target.value }
+                                }
+                                return app
+                              }))
+                            }}
+                            InputLabelProps={{ shrink: true }}
+                            sx={{ minWidth: 200 }}
+                          />
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => handleScheduleInterviewWithDateTime(application)}
+                            disabled={!application.interviewDateTime}
+                          >
+                            Schedule
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => {
+                              setApplications(prev => prev.map(app => {
+                                const appId = app.application?.id || app.id
+                                const currentAppId = application.application?.id || application.id
+                                if (appId === currentAppId) {
+                                  return { 
+                                    ...app, 
+                                    showDateTimePicker: false, 
+                                    interviewDateTime: '' 
+                                  }
+                                }
+                                return app
+                              }))
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </Box>
+                      </Box>
+                    )}
             </Box>
           ))}
               </Stack>
@@ -1556,6 +2392,212 @@ function ViewApplicants() {
     </Box>
         </DashboardCard>
       </AnimatedBox>
+
+      {/* Profile Modal */}
+      <Dialog
+        open={profileModal.open}
+        onClose={() => setProfileModal({ open: false, applicant: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Applicant Profile
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {profileModal.applicant?.jobTitle || 'Job Application'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {profileModal.applicant ? (
+            <Box sx={{ pt: 1 }}>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>
+                    {profileModal.applicant.applicantName || 'Applicant Name'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Email</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.email || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.phoneNumber || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Address</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.address || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Date of Birth</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.dateOfBirth ? 
+                      new Date(profileModal.applicant.dateOfBirth).toLocaleDateString() : 
+                      'N/A'
+                    }
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Applied Date</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.application?.applicationDate ? 
+                      new Date(profileModal.applicant.application.applicationDate).toLocaleDateString() : 
+                      'N/A'
+                    }
+                  </Typography>
+                </Grid>
+                
+                {profileModal.applicant.education && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Education</Typography>
+                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {profileModal.applicant.education}
+                    </Typography>
+                  </Grid>
+                )}
+                
+                {profileModal.applicant.workHistory && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Work History</Typography>
+                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {profileModal.applicant.workHistory}
+                    </Typography>
+                  </Grid>
+                )}
+                
+                {profileModal.applicant.skills && profileModal.applicant.skills.length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Skills</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                      {profileModal.applicant.skills.map((skill, index) => (
+                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+                
+                {profileModal.applicant.certifications && profileModal.applicant.certifications.length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Certifications</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                      {profileModal.applicant.certifications.map((cert, index) => (
+                        <Chip key={index} label={cert} size="small" color="success" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Veteran Status</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.veteranStatus ? 'Yes' : 'No'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Military Spouse</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {profileModal.applicant.spouseStatus ? 'Yes' : 'No'}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                Applicant profile not available.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProfileModal({ open: false, applicant: null })}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Contact Modal */}
+      <Dialog
+        open={contactModal.open}
+        onClose={() => setContactModal({ open: false, applicant: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Contact Information
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {contactModal.applicant?.applicantName || 'Applicant'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {contactModal.applicant ? (
+            <Box sx={{ pt: 1 }}>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    {contactModal.applicant.applicantName || 'Applicant Name'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Email Address</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {contactModal.applicant.email || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Phone Number</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {contactModal.applicant.phoneNumber || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Address</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {contactModal.applicant.address || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    <Typography variant="body2">
+                      <strong>Note:</strong> Use this contact information to reach out to the applicant regarding their application.
+                    </Typography>
+                  </Alert>
+                </Grid>
+              </Grid>
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                Contact information not available.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setContactModal({ open: false, applicant: null })}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </PageContainer>
   )
 }

@@ -76,15 +76,15 @@ export const jobAPI = {
     try {
       // Transform frontend data to match backend CreateJobRequest structure
       const backendData = {
-        title: jobData.jobTitle,
+        title: jobData.title || jobData.jobTitle,
         companyName: jobData.companyName,
         description: jobData.description,
         jobType: jobData.jobType,
         location: jobData.location,
         status: jobData.status || 'ACTIVE',
-        minSalary: jobData.salary ? parseFloat(jobData.salary.split('-')[0].replace(/[^0-9.]/g, '')) : null,
-        maxSalary: jobData.salary ? parseFloat(jobData.salary.split('-')[1]?.replace(/[^0-9.]/g, '')) : null,
-        requiredSkills: jobData.requirements || []
+        minSalary: jobData.minSalary ? parseFloat(jobData.minSalary) : null,
+        maxSalary: jobData.maxSalary ? parseFloat(jobData.maxSalary) : null,
+        requiredSkills: jobData.requiredSkills || jobData.requirements || []
       }
       
       // Fix jobType enum mapping
@@ -110,8 +110,8 @@ export const jobAPI = {
         jobType: jobData.jobType,
         location: jobData.location,
         status: jobData.status,
-        minSalary: jobData.salary ? parseFloat(jobData.salary.split('-')[0].replace(/[^0-9.]/g, '')) : null,
-        maxSalary: jobData.salary ? parseFloat(jobData.salary.split('-')[1]?.replace(/[^0-9.]/g, '')) : null,
+        minSalary: jobData.minSalary ? parseFloat(jobData.minSalary) : null,
+        maxSalary: jobData.maxSalary ? parseFloat(jobData.maxSalary) : null,
         requiredSkills: jobData.requirements || []
       }
       
@@ -150,7 +150,7 @@ export const jobAPI = {
   // Get employer's jobs (EMPLOYER only)
   getEmployerJobs: async () => {
     try {
-      const response = await api.get('/jobs')
+      const response = await api.get('/jobs/employer')
       
       return response.data
     } catch (error) {
@@ -246,6 +246,36 @@ export const applicationAPI = {
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to update application status')
+    }
+  },
+
+  // Get all application statuses (for dropdown)
+  getApplicationStatuses: async () => {
+    try {
+      const response = await api.get('/applications/statuses')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get application statuses')
+    }
+  },
+
+  // Schedule interview
+  scheduleInterview: async (applicationId, interviewData) => {
+    try {
+      const response = await api.post(`/applications/${applicationId}/schedule-interview`, interviewData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to schedule interview')
+    }
+  },
+
+  // Get interview details
+  getInterviewDetails: async (applicationId) => {
+    try {
+      const response = await api.get(`/applications/${applicationId}/interview`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get interview details')
     }
   },
 

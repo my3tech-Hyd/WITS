@@ -3,6 +3,7 @@ package com.wits.project.service;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -16,7 +17,6 @@ import com.wits.project.repository.UserRepository;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.bson.types.ObjectId;
 
 @Service
 public class ApplicationService {
@@ -40,6 +40,7 @@ public class ApplicationService {
             
             // Fetch user details
             User user = userRepository.findById(app.getUserId()).orElse(null);
+            System.out.println("DEBUG: Found user: " + user);
             if (user != null) {
                 details.setApplicantName(user.getFirstName() + " " + user.getLastName());
                 details.setEmail(user.getEmail());

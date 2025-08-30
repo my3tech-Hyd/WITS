@@ -16,7 +16,7 @@ import lombok.Setter;
 public abstract class BaseDocument {
 
     @Id
-    @Field("_id")
+    // @Field("_id")
     private String id;
 
     @Indexed

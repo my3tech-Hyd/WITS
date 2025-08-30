@@ -1,6 +1,7 @@
 package com.wits.project.web;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -15,21 +16,28 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.wits.project.model.JobApplication;
+import com.wits.project.model.Interview;
 import com.wits.project.model.enums.Enums.ApplicationStatus;
 import com.wits.project.repository.JobApplicationRepository;
+import com.wits.project.repository.InterviewRepository;
 import com.wits.project.security.SecurityUtil;
 import com.wits.project.service.ApplicationService;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @RestController
 @RequestMapping("/api/applications")
-@RequiredArgsConstructor
 public class ApplicationController {
-    private final JobApplicationRepository applications;
-    private final ApplicationService applicationService;
+    @Autowired
+    private JobApplicationRepository applications;
+    
+    @Autowired
+    private InterviewRepository interviewRepository;
+    
+    @Autowired
+    private ApplicationService applicationService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('JOB_SEEKER','EMPLOYER','STAFF')")
@@ -62,6 +70,8 @@ public class ApplicationController {
     public ResponseEntity<?> getJobApplicationsWithUserDetails(@PathVariable String jobPostingId) {
         List<ApplicationService.ApplicationWithDetails> enrichedApplications = 
             applicationService.getApplicationsWithDetails(jobPostingId);
+
+            
         return ResponseEntity.ok(enrichedApplications);
     }
 
@@ -97,6 +107,50 @@ public class ApplicationController {
         return ResponseEntity.ok(applications.save(a));
     }
 
+    // New endpoint: Schedule interview
+    @PostMapping("/{applicationId}/schedule-interview")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Interview> scheduleInterview(@PathVariable String applicationId, @RequestBody ScheduleInterviewRequest req) {
+        JobApplication application = applications.findById(applicationId).orElseThrow();
+        
+        // Verify the job belongs to the current employer
+        if (!application.getJobPostingId().equals(req.jobPostingId)) {
+            throw new IllegalArgumentException("Invalid job posting for this application");
+        }
+        
+        Interview interview = new Interview();
+        interview.setApplicationId(applicationId);
+        interview.setJobPostingId(req.jobPostingId);
+        interview.setEmployerId(SecurityUtil.getCurrentUserId());
+        interview.setApplicantId(application.getUserId());
+        interview.setScheduledDateTime(req.scheduledDateTime);
+        interview.setLocation(req.location);
+        interview.setInterviewType(req.interviewType);
+        interview.setNotes(req.notes);
+        interview.setStatus("SCHEDULED");
+        
+        // Update application status to INTERVIEW_SCHEDULED
+        application.setStatus(ApplicationStatus.INTERVIEW_SCHEDULED);
+        applications.save(application);
+        
+        return ResponseEntity.ok(interviewRepository.save(interview));
+    }
+
+    // New endpoint: Get interview details for an application
+    @GetMapping("/{applicationId}/interview")
+    @PreAuthorize("hasAnyRole('EMPLOYER','JOB_SEEKER')")
+    public ResponseEntity<Interview> getInterviewDetails(@PathVariable String applicationId) {
+        Interview interview = interviewRepository.findByApplicationIdAndStatus(applicationId, "SCHEDULED")
+            .orElse(null);
+        return ResponseEntity.ok(interview);
+    }
+
+    // New endpoint: Get all application statuses (for dropdown)
+    @GetMapping("/statuses")
+    public ResponseEntity<ApplicationStatus[]> getApplicationStatuses() {
+        return ResponseEntity.ok(ApplicationStatus.values());
+    }
+
     @Getter
     @Setter
     public static class CreateApplication {
@@ -109,6 +163,16 @@ public class ApplicationController {
     public static class UpdateStatus {
         public String applicationId;
         public ApplicationStatus status;
+    }
+
+    @Getter
+    @Setter
+    public static class ScheduleInterviewRequest {
+        public String jobPostingId;
+        public LocalDateTime scheduledDateTime;
+        public String location;
+        public String interviewType;
+        public String notes;
     }
 }
 

@@ -26,7 +26,11 @@ import {
   Alert,
   InputAdornment,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material'
 import {
   Dashboard,
@@ -43,7 +47,9 @@ import {
   Send,
   CloudUpload,
   Add,
-  Close
+  Close,
+  Event,
+  CheckCircle
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { jobAPI, applicationAPI, userAPI, roleUtils } from '../../api/apiService.js'
@@ -62,7 +68,7 @@ import {
 const drawerWidth = 280
 
 // Dashboard Component
-function DashboardHome() {
+function DashboardHome({ setSelectedTab }) {
   const [stats, setStats] = useState({
     totalApplications: 0,
     activeApplications: 0,
@@ -874,12 +880,13 @@ function MyApplications() {
 }
 
 // Job Search Component
-function JobSearch() {
+function JobSearch({ setInterviewModal, setJobDetailsModal }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(false)
   const [applications, setApplications] = useState([])
   const [applicationsLoading, setApplicationsLoading] = useState(false)
+  const [interviewDetails, setInterviewDetails] = useState({})
 
   const searchJobs = async () => {
     if (!searchQuery.trim()) return
@@ -923,11 +930,50 @@ function JobSearch() {
     }
   }
 
+  const handleViewInterviewDetails = (jobId) => {
+    const application = applications.find(app => app.application?.jobPostingId === jobId)
+    if (application) {
+      const interview = interviewDetails[application.application.id]
+      setInterviewModal({
+        open: true,
+        application,
+        interview
+      })
+    }
+  }
+
+  const handleViewJobDetails = (job) => {
+    setJobDetailsModal({
+      open: true,
+      job
+    })
+  }
+
   const loadUserApplications = async () => {
     setApplicationsLoading(true)
     try {
       const response = await applicationAPI.getMyApplicationsWithJobDetails()
       setApplications(response || [])
+      
+      // Load interview details for applications with INTERVIEW_SCHEDULED status
+      const interviewPromises = response
+        .filter(app => app.application?.status === 'INTERVIEW_SCHEDULED')
+        .map(async (app) => {
+          try {
+            const interview = await applicationAPI.getInterviewDetails(app.application.id)
+            return { applicationId: app.application.id, interview }
+          } catch (error) {
+            console.error('Failed to load interview details:', error)
+            return { applicationId: app.application.id, interview: null }
+          }
+        })
+      
+      const interviewResults = await Promise.all(interviewPromises)
+      const interviewMap = {}
+      interviewResults.forEach(result => {
+        interviewMap[result.applicationId] = result.interview
+      })
+      setInterviewDetails(interviewMap)
     } catch (error) {
       console.error('Failed to load user applications:', error)
       setApplications([])
@@ -953,7 +999,7 @@ function JobSearch() {
           color: 'info',
           text: 'Application Received',
           disabled: true,
-          startIcon: <Checkbox />
+          startIcon: <CheckCircle />
         }
       case 'UNDER_REVIEW':
         return {
@@ -967,9 +1013,10 @@ function JobSearch() {
         return {
           variant: 'contained',
           color: 'primary',
-          text: 'Interview Scheduled',
-          disabled: true,
-          startIcon: <TrendingUp />
+          text: 'View Interview Details',
+          disabled: false,
+          startIcon: <Event />,
+          onClick: () => handleViewInterviewDetails(jobId)
         }
       case 'OFFERED':
         return {
@@ -1093,28 +1140,46 @@ function JobSearch() {
                           <Chip label={job.jobType || 'Full Time'} size="small" />
                         </Stack>
                       </Box>
-                      {(() => {
-                        const buttonProps = getApplyButtonProps(job.id)
-                        return (
-                          <Button
-                            variant={buttonProps.variant}
-                            color={buttonProps.color}
-                            startIcon={buttonProps.startIcon}
-                            onClick={() => handleApply(job.id)}
-                            disabled={buttonProps.disabled}
-                            sx={{
-                              minWidth: 140,
-                              fontWeight: 600,
-                              textTransform: 'none',
-                              borderRadius: 2,
-                              px: 3,
-                              py: 1
-                            }}
-                          >
-                            {buttonProps.text}
-                          </Button>
-                        )
-                      })()}
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="outlined"
+                          color="primary"
+                          startIcon={<Visibility />}
+                          onClick={() => handleViewJobDetails(job)}
+                          sx={{
+                            minWidth: 100,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            borderRadius: 2,
+                            px: 2,
+                            py: 1
+                          }}
+                        >
+                          View
+                        </Button>
+                        {(() => {
+                          const buttonProps = getApplyButtonProps(job.id)
+                          return (
+                            <Button
+                              variant={buttonProps.variant}
+                              color={buttonProps.color}
+                              startIcon={buttonProps.startIcon}
+                              onClick={buttonProps.onClick || (() => handleApply(job.id))}
+                              disabled={buttonProps.disabled}
+                              sx={{
+                                minWidth: 140,
+                                fontWeight: 600,
+                                textTransform: 'none',
+                                borderRadius: 2,
+                                px: 3,
+                                py: 1
+                              }}
+                            >
+                              {buttonProps.text}
+                            </Button>
+                          )
+                        })()}
+                      </Stack>
                     </Stack>
                   </JobCard>
                 </AnimatedBox>
@@ -1131,6 +1196,8 @@ function JobSearch() {
 export default function JobSeekerDashboard() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedTab, setSelectedTab] = useState('dashboard')
+  const [interviewModal, setInterviewModal] = useState({ open: false, application: null, interview: null })
+  const [jobDetailsModal, setJobDetailsModal] = useState({ open: false, job: null })
   const navigate = useNavigate()
 
   const handleDrawerToggle = () => {
@@ -1147,15 +1214,15 @@ export default function JobSeekerDashboard() {
   const renderContent = () => {
     switch (selectedTab) {
       case 'dashboard':
-        return <DashboardHome />
+        return <DashboardHome setSelectedTab={setSelectedTab} />
       case 'profile':
         return <MyProfile />
       case 'applications':
         return <MyApplications />
       case 'job-search':
-        return <JobSearch />
+        return <JobSearch setInterviewModal={setInterviewModal} setJobDetailsModal={setJobDetailsModal} />
       default:
-        return <DashboardHome />
+        return <DashboardHome setSelectedTab={setSelectedTab} />
     }
   }
 
@@ -1294,6 +1361,205 @@ export default function JobSeekerDashboard() {
       >
         {renderContent()}
       </Box>
+
+      {/* Interview Details Modal */}
+      <Dialog
+        open={interviewModal.open}
+        onClose={() => setInterviewModal({ open: false, application: null, interview: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Interview Details
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {interviewModal.application?.jobTitle} at {interviewModal.application?.companyName}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {interviewModal.interview ? (
+            <Box sx={{ pt: 1 }}>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h6" color="primary" sx={{ mb: 2 }}>
+                    🎉 Congratulations! Your interview has been scheduled.
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Date & Time</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {new Date(interviewModal.interview.scheduledDateTime).toLocaleString()}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Interview Type</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {interviewModal.interview.interviewType?.replace('_', ' ')}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Location/Meeting Details</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {interviewModal.interview.location}
+                  </Typography>
+                </Grid>
+                
+                {interviewModal.interview.notes && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Additional Notes</Typography>
+                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {interviewModal.interview.notes}
+                    </Typography>
+                  </Grid>
+                )}
+                
+                <Grid item xs={12}>
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    <Typography variant="body2">
+                      <strong>Important:</strong> Please arrive 10 minutes early for your interview. 
+                      If you need to reschedule, please contact the employer as soon as possible.
+                    </Typography>
+                  </Alert>
+                </Grid>
+              </Grid>
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                Interview details are being prepared. Please check back later.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInterviewModal({ open: false, application: null, interview: null })}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Job Details Modal */}
+      <Dialog
+        open={jobDetailsModal.open}
+        onClose={() => setJobDetailsModal({ open: false, job: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Job Details
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {jobDetailsModal.job?.company || 'Company Name'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {jobDetailsModal.job ? (
+            <Box sx={{ pt: 1 }}>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>
+                    {jobDetailsModal.job.title}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Company</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {jobDetailsModal.job.company || 'Company Name'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Location</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {jobDetailsModal.job.location}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Job Type</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {jobDetailsModal.job.jobType || 'Full Time'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Posted Date</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {jobDetailsModal.job.createdAt ? 
+                      new Date(jobDetailsModal.job.createdAt).toLocaleDateString() : 
+                      'Recently Posted'
+                    }
+                  </Typography>
+                </Grid>
+                
+                {jobDetailsModal.job.minSalary && jobDetailsModal.job.maxSalary && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Salary Range</Typography>
+                    <Typography variant="body1" sx={{ mb: 2 }}>
+                      ${jobDetailsModal.job.minSalary.toLocaleString()} - ${jobDetailsModal.job.maxSalary.toLocaleString()}
+                    </Typography>
+                  </Grid>
+                )}
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Job Description</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                    {jobDetailsModal.job.description}
+                  </Typography>
+                </Grid>
+                
+                {jobDetailsModal.job.requiredSkills && jobDetailsModal.job.requiredSkills.length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Required Skills</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                      {jobDetailsModal.job.requiredSkills.map((skill, index) => (
+                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+                
+                <Grid item xs={12}>
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    <Typography variant="body2">
+                      <strong>Interested in this position?</strong> Click the Apply button to submit your application.
+                    </Typography>
+                  </Alert>
+                </Grid>
+              </Grid>
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                Job details not available.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setJobDetailsModal({ open: false, job: null })}>
+            Close
+          </Button>
+          {jobDetailsModal.job && (
+            <Button 
+              variant="contained" 
+              color="primary"
+              onClick={() => {
+                handleApply(jobDetailsModal.job.id)
+                setJobDetailsModal({ open: false, job: null })
+              }}
+            >
+              Apply Now
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
