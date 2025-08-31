@@ -32,15 +32,21 @@ public class ApplicationService {
 
     // Fetch applications with complete user and job data for employers
     public List<ApplicationWithDetails> getApplicationsWithDetails(String jobPostingId) {
+        System.out.println("DEBUG: ApplicationService.getApplicationsWithDetails called for jobPostingId: " + jobPostingId);
+        
         List<JobApplication> applications = jobApplicationRepository.findByJobPostingId(jobPostingId);
+        System.out.println("DEBUG: Found " + applications.size() + " applications in database for jobPostingId: " + jobPostingId);
         
         return applications.stream().map(app -> {
+            System.out.println("DEBUG: Processing application: " + app.getId() + " for user: " + app.getUserId());
+            
             ApplicationWithDetails details = new ApplicationWithDetails();
             details.setApplication(app);
             
             // Fetch user details
             User user = userRepository.findById(app.getUserId()).orElse(null);
             System.out.println("DEBUG: Found user: " + user);
+            System.out.println("DEBUG: User ID being searched: " + app.getUserId());
             if (user != null) {
                 details.setApplicantName(user.getFirstName() + " " + user.getLastName());
                 details.setEmail(user.getEmail());

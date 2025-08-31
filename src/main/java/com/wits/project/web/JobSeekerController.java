@@ -462,6 +462,74 @@ public class JobSeekerController {
         }
     }
 
+    /**
+     * Link existing documents to job seeker profile (for fixing orphaned documents)
+     */
+    @PostMapping("/profile/link-documents")
+    public ResponseEntity<String> linkExistingDocuments() {
+        try {
+            String currentUserId = SecurityUtil.getCurrentUserId();
+            log.info("Linking existing documents for user: {}", currentUserId);
+            
+            // Get or create the job seeker profile
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(currentUserId);
+            JobSeeker jobSeeker;
+            
+            if (jobSeekerOpt.isPresent()) {
+                jobSeeker = jobSeekerOpt.get();
+                log.info("Found existing JobSeeker profile with ID: {}", jobSeeker.getId());
+            } else {
+                // Create new job seeker profile if it doesn't exist
+                jobSeeker = jobSeekerService.createJobSeekerFromUser(currentUserId);
+                log.info("Created new JobSeeker profile for user: {} with ID: {}", currentUserId, jobSeeker.getId());
+            }
+            
+            boolean updated = false;
+            
+            // Find and link resume document
+            if (jobSeeker.getResumeDocumentId() == null || jobSeeker.getResumeDocumentId().isEmpty()) {
+                List<com.wits.project.model.ProgramDocument> resumeDocs = documentService.getDocumentsByUserAndType(
+                    currentUserId, 
+                    com.wits.project.model.enums.Enums.ProgramType.RESUME
+                );
+                if (!resumeDocs.isEmpty()) {
+                    String resumeDocId = resumeDocs.get(0).getId();
+                    jobSeeker.setResumeDocumentId(resumeDocId);
+                    log.info("Linked resume document with ID: {}", resumeDocId);
+                    updated = true;
+                }
+            }
+            
+            // Find and link cover letter document
+            if (jobSeeker.getCoverLetterDocumentId() == null || jobSeeker.getCoverLetterDocumentId().isEmpty()) {
+                List<com.wits.project.model.ProgramDocument> coverLetterDocs = documentService.getDocumentsByUserAndType(
+                    currentUserId, 
+                    com.wits.project.model.enums.Enums.ProgramType.COVER_LETTER
+                );
+                if (!coverLetterDocs.isEmpty()) {
+                    String coverLetterDocId = coverLetterDocs.get(0).getId();
+                    jobSeeker.setCoverLetterDocumentId(coverLetterDocId);
+                    log.info("Linked cover letter document with ID: {}", coverLetterDocId);
+                    updated = true;
+                }
+            }
+            
+            if (updated) {
+                // Save the updated profile
+                JobSeeker savedJobSeeker = jobSeekerService.saveJobSeekerProfile(jobSeeker);
+                log.info("Profile updated successfully. ResumeDocumentId: {}, CoverLetterDocumentId: {}", 
+                    savedJobSeeker.getResumeDocumentId(), savedJobSeeker.getCoverLetterDocumentId());
+                return ResponseEntity.ok("Documents linked successfully");
+            } else {
+                return ResponseEntity.ok("No documents to link");
+            }
+            
+        } catch (Exception e) {
+            log.error("Error linking documents: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     // Helper methods to convert between DTOs and entities
     private ProfileResponse convertToProfileResponse(JobSeeker jobSeeker) {
         ProfileResponse response = new ProfileResponse();

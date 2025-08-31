@@ -1589,6 +1589,7 @@ function MyProfile() {
 function MyApplications() {
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
+  const [jobDetailsModal, setJobDetailsModal] = useState({ open: false, job: null })
 
   useEffect(() => {
     const loadApplications = async () => {
@@ -1625,6 +1626,10 @@ function MyApplications() {
       day: 'numeric', 
       year: 'numeric' 
     })
+  }
+
+  const handleViewJobDetails = (application) => {
+    setJobDetailsModal({ open: true, job: application })
   }
 
   return (
@@ -1686,7 +1691,19 @@ function MyApplications() {
                           </Typography>
                         </Stack>
                       </Box>
-                      <IconButton size="small" title="View Details" sx={{ color: 'primary.main' }}>
+                      <IconButton 
+                        size="small" 
+                        title="View Job Details" 
+                        onClick={() => handleViewJobDetails(app)}
+                        sx={{ 
+                          color: 'primary.main',
+                          '&:hover': {
+                            backgroundColor: 'primary.light',
+                            transform: 'scale(1.1)',
+                            transition: 'all 0.2s ease'
+                          }
+                        }}
+                      >
                         <Visibility />
                       </IconButton>
                     </Stack>
@@ -1697,6 +1714,482 @@ function MyApplications() {
           )}
         </DashboardCard>
       </AnimatedBox>
+
+      {/* Job Details Modal */}
+      <Dialog
+        open={jobDetailsModal.open}
+        onClose={() => setJobDetailsModal({ open: false, job: null })}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          pb: 3, 
+          background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+          color: 'white',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <Box sx={{ 
+            position: 'absolute', 
+            top: 0, 
+            right: 0, 
+            width: '100px', 
+            height: '100px', 
+            background: 'rgba(255, 255, 255, 0.1)', 
+            borderRadius: '50%', 
+            transform: 'translate(30px, -30px)' 
+          }} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                Job Details
+              </Typography>
+              <Typography variant="body1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+                {jobDetailsModal.job?.jobTitle || 'Job Title'}
+              </Typography>
+            </Box>
+            <Chip 
+              label={jobDetailsModal.job?.application?.status || 'Applied'} 
+              color={getStatusColor(jobDetailsModal.job?.application?.status)}
+              size="medium"
+              sx={{ 
+                fontWeight: 600, 
+                px: 3, 
+                py: 1,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                '& .MuiChip-label': {
+                  color: 'white'
+                }
+              }}
+            />
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 4, pb: 2 }}>
+          {jobDetailsModal.job && (
+            <Box>
+              {/* Hero Section */}
+              <Box sx={{ 
+                mb: 4, 
+                p: 4, 
+                background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+                borderRadius: 4,
+                border: '1px solid',
+                borderColor: 'divider',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                <Box sx={{ 
+                  position: 'absolute', 
+                  top: -20, 
+                  right: -20, 
+                  width: '120px', 
+                  height: '120px', 
+                  background: 'linear-gradient(45deg, #1976d2, #42a5f5)', 
+                  borderRadius: '50%', 
+                  opacity: 0.1 
+                }} />
+                <Typography variant="h3" sx={{ 
+                  fontWeight: 800, 
+                  mb: 2, 
+                  color: 'primary.main',
+                  fontSize: { xs: '1.8rem', md: '2.2rem' }
+                }}>
+                  {jobDetailsModal.job.jobTitle || 'Job Title'}
+                </Typography>
+                <Typography variant="h5" color="text.secondary" sx={{ mb: 3, fontWeight: 600 }}>
+                  {jobDetailsModal.job.companyName || 'Company Name'}
+                </Typography>
+                
+                <Grid container spacing={3} sx={{ position: 'relative', zIndex: 1 }}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 2,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <LocationOn sx={{ color: 'primary.main', fontSize: 24 }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                          Location
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {jobDetailsModal.job.location || 'N/A'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 2,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <Work sx={{ color: 'primary.main', fontSize: 24 }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                          Type
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {jobDetailsModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                  
+                  {jobDetailsModal.job.minSalary && jobDetailsModal.job.maxSalary && (
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 2,
+                        p: 2,
+                        bgcolor: 'white',
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                      }}>
+                        <TrendingUp sx={{ color: 'success.main', fontSize: 24 }} />
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                            Salary
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, color: 'success.main' }}>
+                            ${jobDetailsModal.job.minSalary?.toLocaleString()} - ${jobDetailsModal.job.maxSalary?.toLocaleString()}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Grid>
+                  )}
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 2,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <Event sx={{ color: 'primary.main', fontSize: 24 }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                          Applied Date
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {formatDate(jobDetailsModal.job.application?.applicationDate || jobDetailsModal.job.applicationDate)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Grid container spacing={4}>
+                {/* Job Description */}
+                <Grid item xs={12} md={8}>
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="h5" sx={{ 
+                      fontWeight: 700, 
+                      mb: 3, 
+                      color: 'primary.main', 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      fontSize: { xs: '1.3rem', md: '1.5rem' }
+                    }}>
+                      <Assignment sx={{ mr: 2, fontSize: 28 }} />
+                      Job Description
+                    </Typography>
+                    <Box sx={{ 
+                      p: 4, 
+                      bgcolor: 'white', 
+                      borderRadius: 3, 
+                      border: '1px solid', 
+                      borderColor: 'divider',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <Box sx={{ 
+                        position: 'absolute', 
+                        top: 0, 
+                        left: 0, 
+                        width: '4px', 
+                        height: '100%', 
+                        bgcolor: 'primary.main' 
+                      }} />
+                      <Typography variant="body1" sx={{ 
+                        whiteSpace: 'pre-wrap', 
+                        lineHeight: 1.8,
+                        fontSize: '1.1rem',
+                        color: 'text.primary'
+                      }}>
+                        {jobDetailsModal.job.description || 'No description available.'}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Required Skills */}
+                  {jobDetailsModal.job.requiredSkills && jobDetailsModal.job.requiredSkills.length > 0 && (
+                    <Box sx={{ mb: 4 }}>
+                      <Typography variant="h5" sx={{ 
+                        fontWeight: 700, 
+                        mb: 3, 
+                        color: 'primary.main', 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        fontSize: { xs: '1.3rem', md: '1.5rem' }
+                      }}>
+                        <Star sx={{ mr: 2, fontSize: 28 }} />
+                        Required Skills
+                      </Typography>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        gap: 2,
+                        p: 3,
+                        bgcolor: 'white',
+                        borderRadius: 3,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+                      }}>
+                        {jobDetailsModal.job.requiredSkills.map((skill, index) => (
+                          <Chip 
+                            key={index} 
+                            label={skill} 
+                            size="large" 
+                            color="primary" 
+                            variant="filled"
+                            sx={{ 
+                              fontWeight: 600, 
+                              px: 3, 
+                              py: 1,
+                              fontSize: '0.95rem',
+                              '&:hover': {
+                                transform: 'translateY(-2px)',
+                                boxShadow: '0 6px 16px rgba(25, 118, 210, 0.3)',
+                                transition: 'all 0.3s ease'
+                              }
+                            }}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Grid>
+
+                {/* Job Information Sidebar */}
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ position: 'sticky', top: 20 }}>
+                    {/* Job Information Card */}
+                    <Box sx={{ 
+                      p: 4, 
+                      background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+                      borderRadius: 4, 
+                      mb: 3,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                    }}>
+                      <Typography variant="h5" sx={{ 
+                        fontWeight: 700, 
+                        mb: 4, 
+                        color: 'primary.main',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}>
+                        <Assignment sx={{ mr: 2, fontSize: 28 }} />
+                        Job Information
+                      </Typography>
+                      <Stack spacing={3}>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Posted Date
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                            {formatDate(jobDetailsModal.job.postedDate)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Job Type
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                            {jobDetailsModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Location
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                            {jobDetailsModal.job.location || 'N/A'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Status
+                          </Typography>
+                          <Chip 
+                            label={jobDetailsModal.job.application?.status || 'Applied'} 
+                            color={getStatusColor(jobDetailsModal.job.application?.status)}
+                            size="medium"
+                            sx={{ 
+                              fontWeight: 600, 
+                              mt: 1,
+                              px: 2
+                            }}
+                          />
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    {/* Application Status Card */}
+                    <Box sx={{ 
+                      p: 4, 
+                      background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+                      borderRadius: 4, 
+                      color: 'white',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <Box sx={{ 
+                        position: 'absolute', 
+                        top: -20, 
+                        right: -20, 
+                        width: '80px', 
+                        height: '80px', 
+                        background: 'rgba(255, 255, 255, 0.1)', 
+                        borderRadius: '50%' 
+                      }} />
+                      <Typography variant="h5" sx={{ 
+                        fontWeight: 700, 
+                        mb: 4,
+                        position: 'relative',
+                        zIndex: 1
+                      }}>
+                        Application Status
+                      </Typography>
+                      <Stack spacing={3} sx={{ position: 'relative', zIndex: 1 }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                            Current Status
+                          </Typography>
+                          <Chip 
+                            label={jobDetailsModal.job.application?.status?.replace('_', ' ') || 'Applied'} 
+                            sx={{ 
+                              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                              color: 'white',
+                              border: '1px solid rgba(255, 255, 255, 0.3)',
+                              fontWeight: 600,
+                              '& .MuiChip-label': {
+                                color: 'white'
+                              }
+                            }}
+                          />
+                        </Box>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                            Application ID
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {jobDetailsModal.job.application?.id || jobDetailsModal.job.id}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                            Applied Date
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {formatDate(jobDetailsModal.job.application?.applicationDate || jobDetailsModal.job.applicationDate)}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </Box>
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button 
+            onClick={() => setJobDetailsModal({ open: false, job: null })}
+            variant="outlined"
+            sx={{ 
+              px: 4, 
+              py: 1.5,
+              borderRadius: 2,
+              fontWeight: 600,
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                transition: 'all 0.3s ease'
+              }
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </PageContainer>
   )
 }
