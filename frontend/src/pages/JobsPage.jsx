@@ -231,11 +231,11 @@ export default function JobsPage() {
                       )}
                     </Button>
                   </Stack>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
       )}
 
       {!loading && jobs.length === 0 && (

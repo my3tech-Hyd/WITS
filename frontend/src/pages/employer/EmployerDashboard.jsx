@@ -66,10 +66,12 @@ import {
   MoreVert,
   Block,
   Schedule,
-  Event
+  Event,
+  Assignment,
+  Star
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { jobAPI, applicationAPI, roleUtils, userAPI } from '../../api/apiService.js'
+import { jobAPI, applicationAPI, roleUtils, userAPI, employerAPI } from '../../api/apiService.js'
 import { 
   DashboardCard, 
   StatsCard, 
@@ -414,8 +416,8 @@ function MyJobPostings() {
           'REJECTED',
           'WITHDRAWN'
         ])
-      }
     }
+  }
 
     loadJobs()
     loadApplicationStatuses()
@@ -520,6 +522,14 @@ function MyJobPostings() {
     } finally {
       setApplicantsLoading(false)
     }
+  }
+
+  const handleViewApplicantDetails = (application) => {
+    // Open the applicant details modal (this will be implemented in the ViewApplicants component)
+    setApplicantsModal(prev => ({
+      ...prev,
+      selectedApplicant: application
+    }))
   }
 
   const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
@@ -654,6 +664,14 @@ function MyJobPostings() {
   const handleJobAction = async (job, action) => {
     try {
       switch (action) {
+        case 'activate':
+          await jobAPI.updateJobStatus(job.id, 'ACTIVE')
+          // Update job status in local state
+          setJobs(prev => prev.map(j => 
+            j.id === job.id ? { ...j, status: 'ACTIVE' } : j
+          ))
+          setSuccessMessage('Job activated successfully!')
+          break
         case 'deactivate':
           await jobAPI.updateJobStatus(job.id, 'INACTIVE')
           // Update job status in local state
@@ -934,75 +952,189 @@ function MyJobPostings() {
       <Dialog
         open={viewJobModal.open}
         onClose={() => setViewJobModal({ open: false, job: null })}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Job Details
-          </Typography>
+        <DialogTitle sx={{ pb: 2, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              Job Details
+            </Typography>
+            <Chip 
+              label={viewJobModal.job?.status} 
+              color={getStatusColor(viewJobModal.job?.status)}
+              size="medium"
+              sx={{ fontWeight: 600, px: 2 }}
+            />
+          </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 3 }}>
           {viewJobModal.job && (
-            <Box sx={{ pt: 1 }}>
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
-                    {viewJobModal.job.title}
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                    {viewJobModal.job.companyName || viewJobModal.job.company} • {viewJobModal.job.location}
-                  </Typography>
-                  <Chip 
-                    label={viewJobModal.job.status} 
-                    color={getStatusColor(viewJobModal.job.status)}
-                    size="small"
-                    sx={{ mb: 2 }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Job Type</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {viewJobModal.job.jobType?.replace('_', ' ') || 'N/A'}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Posted Date</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {formatDate(viewJobModal.job.postedDate)}
-                  </Typography>
-                </Grid>
-                {viewJobModal.job.minSalary && viewJobModal.job.maxSalary && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">Salary Range</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                      ${viewJobModal.job.minSalary.toLocaleString()} - ${viewJobModal.job.maxSalary.toLocaleString()}
-                  </Typography>
-                </Grid>
-                )}
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Description</Typography>
-                  <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
-                    {viewJobModal.job.description}
-                  </Typography>
-                </Grid>
-                {viewJobModal.job.requiredSkills && viewJobModal.job.requiredSkills.length > 0 && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                      Required Skills
+            <Box>
+              {/* Header Section */}
+              <Box sx={{ mb: 4, p: 3, bgcolor: 'grey.50', borderRadius: 3 }}>
+                <Typography variant="h4" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>
+                  {viewJobModal.job.title}
+                </Typography>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
+                  {viewJobModal.job.companyName || viewJobModal.job.company}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LocationOn sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {viewJobModal.job.location}
                     </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {viewJobModal.job.requiredSkills.map((skill, index) => (
-                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
-                      ))}
-    </Box>
-                  </Grid>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Work sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {viewJobModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                    </Typography>
+                  </Box>
+                </Box>
+                {viewJobModal.job.minSalary && viewJobModal.job.maxSalary && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TrendingUp sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 600, color: 'success.main' }}>
+                      ${viewJobModal.job.minSalary.toLocaleString()} - ${viewJobModal.job.maxSalary.toLocaleString()}
+                    </Typography>
+                  </Box>
                 )}
+              </Box>
+
+              <Grid container spacing={4}>
+                {/* Job Description */}
+                <Grid item xs={12} md={8}>
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
+                      <Assignment sx={{ mr: 1 }} />
+                      Job Description
+                    </Typography>
+                    <Box sx={{ p: 3, bgcolor: 'background.paper', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {viewJobModal.job.description}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Required Skills */}
+                  {viewJobModal.job.requiredSkills && viewJobModal.job.requiredSkills.length > 0 && (
+                    <Box sx={{ mb: 4 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
+                        <Star sx={{ mr: 1 }} />
+                        Required Skills
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {viewJobModal.job.requiredSkills.map((skill, index) => (
+                          <Chip 
+                            key={index} 
+                            label={skill} 
+                            size="medium" 
+                            color="primary" 
+                            variant="filled"
+                            sx={{ fontWeight: 500, px: 2 }}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Grid>
+
+                {/* Job Details Sidebar */}
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ position: 'sticky', top: 20 }}>
+                    <Box sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 3, mb: 3 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: 'primary.main' }}>
+                        Job Information
+                      </Typography>
+                      <Stack spacing={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Posted Date
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {formatDate(viewJobModal.job.postedDate)}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Job Type
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {viewJobModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Location
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {viewJobModal.job.location}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Applications
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {viewJobModal.job.applications || 0} applicants
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Status
+                          </Typography>
+                          <Chip 
+                            label={viewJobModal.job.status} 
+                            color={getStatusColor(viewJobModal.job.status)}
+                            size="small"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    {/* Quick Actions */}
+                    <Box sx={{ p: 3, bgcolor: 'primary.main', borderRadius: 3, color: 'white' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
+                        Quick Actions
+                      </Typography>
+                      <Stack spacing={2}>
+                        <Button
+                          variant="contained"
+                          color="secondary"
+                          fullWidth
+                          startIcon={<Edit />}
+                          onClick={() => {
+                            setViewJobModal({ open: false, job: null })
+                            handleEditJob(viewJobModal.job)
+                          }}
+                          sx={{ fontWeight: 600 }}
+                        >
+                          Edit Job
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          sx={{ color: 'white', borderColor: 'white', fontWeight: 600 }}
+                          fullWidth
+                          startIcon={<People />}
+                          onClick={() => {
+                            setViewJobModal({ open: false, job: null })
+                            handleViewApplicants(viewJobModal.job)
+                          }}
+                        >
+                          View Applicants
+                        </Button>
+                      </Stack>
+                    </Box>
+                  </Box>
+                </Grid>
               </Grid>
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={() => setViewJobModal({ open: false, job: null })}>
             Close
           </Button>
@@ -1203,160 +1335,138 @@ function MyJobPostings() {
         maxWidth="lg"
         fullWidth
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Applicants for {applicantsModal.job?.title}
-          </Typography>
+        <DialogTitle sx={{ pb: 2, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              Applicants for {applicantsModal.job?.title}
+            </Typography>
+            <Chip 
+              label={`${applicantsModal.applicants.length} applicants`}
+              color="primary"
+              size="medium"
+              sx={{ fontWeight: 600 }}
+            />
+          </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 3 }}>
           {applicantsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
               <CircularProgress />
             </Box>
           ) : applicantsModal.applicants.length === 0 ? (
             <Box sx={{ textAlign: 'center', p: 4 }}>
+              <People sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                No applicants yet
+              </Typography>
               <Typography variant="body1" color="text.secondary">
-                No applicants found for this job posting.
+                Applicants will appear here once they apply for this position.
               </Typography>
             </Box>
           ) : (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Applicant Name</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell>Phone</TableCell>
-                    <TableCell>Application Date</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {applicantsModal.applicants.map((application, index) => (
-                    <TableRow key={application.id || index}>
-                      <TableCell>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Avatar sx={{ width: 32, height: 32 }}>
+            <Grid container spacing={3}>
+              {applicantsModal.applicants.map((application, index) => (
+                <Grid item xs={12} key={application.id || index}>
+                  <Card sx={{ 
+                    p: 3, 
+                    border: '1px solid', 
+                    borderColor: 'divider',
+                    borderRadius: 3,
+                    '&:hover': {
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      borderColor: 'primary.main'
+                    }
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main' }}>
+                          <Typography variant="h6" sx={{ fontWeight: 600, color: 'white' }}>
                             {application.user?.firstName?.charAt(0) || 'U'}
-                          </Avatar>
-                          <Typography variant="body2">
+                          </Typography>
+                        </Avatar>
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
                             {application.user?.firstName} {application.user?.lastName}
                           </Typography>
-                        </Stack>
-                      </TableCell>
-                      <TableCell>{application.user?.email || 'N/A'}</TableCell>
-                      <TableCell>{application.user?.phone || 'N/A'}</TableCell>
-                      <TableCell>{formatDate(application.applicationDate)}</TableCell>
-                      <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {application.user?.email}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Chip 
-                          label={application.status} 
+                          label={application.status?.replace('_', ' ')} 
                           color={getApplicationStatusColor(application.status)}
-                          size="small"
+                          size="medium"
+                          sx={{ fontWeight: 600 }}
                         />
-                      </TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={1}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => {
-                              // Handle view applicant details
-                              console.log('View applicant:', application.user?.id)
-                            }}
-                          >
-                            View
-                          </Button>
-                          <FormControl size="small" sx={{ minWidth: 120 }}>
-                            <Select
-                              value={application.status}
-                              onChange={(e) => {
-                                const newStatus = e.target.value
-                                if (newStatus === 'INTERVIEW_SCHEDULED') {
-                                  // Show date/time picker inline
-                                  setApplicantsModal(prev => ({
-                                    ...prev,
-                                    applicants: prev.applicants.map(app => 
-                                      app.id === application.id 
-                                        ? { ...app, status: newStatus, showDateTimePicker: true }
-                                        : app
-                                    )
-                                  }))
-                                } else {
-                                  handleUpdateApplicationStatus(application.id, newStatus)
-                                }
-                              }}
-                            >
-                              {applicationStatuses.map((status) => (
-                                <MenuItem key={status} value={status}>
-                                  {status.replace('_', ' ')}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        </Stack>
-                        {application.showDateTimePicker && (
-                          <Box sx={{ mt: 1 }}>
-                            <TextField
-                              size="small"
-                              type="datetime-local"
-                              label="Interview Date & Time"
-                              value={application.interviewDateTime || ''}
-                              onChange={(e) => {
-                                setApplicantsModal(prev => ({
-                                  ...prev,
-                                  applicants: prev.applicants.map(app => 
-                                    app.id === application.id 
-                                      ? { ...app, interviewDateTime: e.target.value }
-                                      : app
-                                  )
-                                }))
-                              }}
-                              InputLabelProps={{ shrink: true }}
-                              sx={{ minWidth: 200 }}
-                            />
-                            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                              <Button
-                                size="small"
-                                variant="contained"
-                                onClick={() => handleScheduleInterviewWithDateTime(application)}
-                                disabled={!application.interviewDateTime}
-                              >
-                                Schedule
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => {
-                                  setApplicantsModal(prev => ({
-                                    ...prev,
-                                    applicants: prev.applicants.map(app => 
-                                      app.id === application.id 
-                                        ? { ...app, showDateTimePicker: false, interviewDateTime: '' }
-                                        : app
-                                    )
-                                  }))
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            </Stack>
-                          </Box>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          startIcon={<Visibility />}
+                          onClick={() => handleViewApplicantDetails(application)}
+                          sx={{ fontWeight: 600, borderRadius: 2 }}
+                        >
+                          View Details
+                        </Button>
+                      </Box>
+                    </Box>
+                    
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Phone
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {application.user?.phone || 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Applied Date
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {formatDate(application.applicationDate)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Location
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {application.user?.address || 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Experience
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {application.user?.workHistory ? 'Has Experience' : 'No Experience Listed'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={() => setApplicantsModal({ open: false, job: null, applicants: [] })}>
             Close
           </Button>
         </DialogActions>
       </Dialog>
+                              
 
       {/* Interview Scheduling Modal */}
       <Dialog
@@ -1450,6 +1560,15 @@ function MyJobPostings() {
         open={actionMenu.open}
         onClose={() => setActionMenu({ open: false, anchorEl: null, job: null })}
       >
+        <MenuItem onClick={() => {
+          handleJobAction(actionMenu.job, 'activate')
+          setActionMenu({ open: false, anchorEl: null, job: null })
+        }}>
+          <ListItemIcon>
+            <CheckBox fontSize="small" />
+          </ListItemIcon>
+          Activate
+        </MenuItem>
         <MenuItem onClick={() => {
           handleJobAction(actionMenu.job, 'deactivate')
           setActionMenu({ open: false, anchorEl: null, job: null })
@@ -2607,6 +2726,10 @@ function MyCompany() {
   const [companyData, setCompanyData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
+  const [stats, setStats] = useState({
+    activeJobs: 0,
+    totalApplications: 0
+  })
   const [formData, setFormData] = useState({
     companyName: '',
     industry: '',
@@ -2623,18 +2746,99 @@ function MyCompany() {
     culture: ''
   })
 
-  // Removed loadCompanyData to avoid 404 errors
+  // Load employer profile data and stats
+  useEffect(() => {
+    const loadCompanyData = async () => {
+      try {
+        setLoading(true)
+        
+        // Load employer profile
+        const response = await employerAPI.getMyProfile()
+        console.log('Employer profile response:', response)
+        
+        if (response) {
+          setCompanyData(response)
+          // Update form data with existing values
+          setFormData({
+            companyName: response.companyName || '',
+            industry: response.industry || '',
+            companySize: response.companySize || '',
+            website: response.website || '',
+            description: response.description || '',
+            streetAddress: response.streetAddress || '',
+            city: response.city || '',
+            state: response.state || '',
+            zipCode: response.zipCode || '',
+            phone: response.companyPhone || '',
+            contactEmail: response.contactEmail || '',
+            benefits: response.benefits || '',
+            culture: response.culture || ''
+          })
+        }
+        
+        // Load stats
+        try {
+          const jobsResponse = await jobAPI.getEmployerJobs()
+          const activeJobs = jobsResponse.filter(job => job.status === 'ACTIVE').length
+          
+          // Get total applications by fetching applications for each job
+          let totalApplications = 0
+          for (const job of jobsResponse) {
+            try {
+              const jobApplications = await applicationAPI.getJobApplicationsWithUserDetails(job.id)
+              totalApplications += jobApplications.length
+            } catch (error) {
+              console.error(`Failed to load applications for job ${job.id}:`, error)
+            }
+          }
+          
+          setStats({
+            activeJobs,
+            totalApplications
+          })
+        } catch (statsError) {
+          console.error('Failed to load stats:', statsError)
+          // Set default stats if loading fails
+          setStats({
+            activeJobs: 0,
+            totalApplications: 0
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load company data:', error)
+        // If profile doesn't exist, that's okay - user can create one
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadCompanyData()
+  }, [])
 
   const handleSave = async () => {
     try {
-      // Save company data to database
-      await userAPI.updateProfile({ company: formData })
-      setEditMode(false)
-      // Reload data
-      const response = await userAPI.getUserById(roleUtils.getCurrentUser()?.id)
-      if (response?.company) {
-        setCompanyData(response.company)
+      // Save company data using employer API
+      const updateData = {
+        companyName: formData.companyName,
+        industry: formData.industry,
+        companySize: formData.companySize,
+        website: formData.website,
+        description: formData.description,
+        streetAddress: formData.streetAddress,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        companyPhone: formData.phone,
+        contactEmail: formData.contactEmail,
+        benefits: formData.benefits,
+        culture: formData.culture
       }
+      
+      const response = await employerAPI.updateProfile(updateData)
+      setCompanyData(response)
+      setEditMode(false)
+      
+      console.log('Company profile updated successfully:', response)
     } catch (error) {
       console.error('Failed to save company data:', error)
     }
@@ -2690,7 +2894,7 @@ function MyCompany() {
                     onClick={() => setEditMode(!editMode)}
                     startIcon={editMode ? <Visibility /> : <Edit />}
                   >
-                    {editMode ? 'Cancel' : 'Edit Profile'}
+                    {editMode ? 'Cancel' : 'Create Company Profile'}
                   </Button>
                 </Box>
 
@@ -2744,6 +2948,96 @@ function MyCompany() {
                       disabled={!editMode}
                       multiline
                       rows={4}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Address Fields */}
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Street Address"
+                      value={formData.streetAddress}
+                      onChange={(e) => setFormData(prev => ({ ...prev, streetAddress: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="City"
+                      value={formData.city}
+                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="State"
+                      value={formData.state}
+                      onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="ZIP Code"
+                      value={formData.zipCode}
+                      onChange={(e) => setFormData(prev => ({ ...prev, zipCode: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Contact Fields */}
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Company Phone"
+                      value={formData.phone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Contact Email"
+                      value={formData.contactEmail}
+                      onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Additional Fields */}
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Benefits"
+                      value={formData.benefits}
+                      onChange={(e) => setFormData(prev => ({ ...prev, benefits: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={3}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Culture"
+                      value={formData.culture}
+                      onChange={(e) => setFormData(prev => ({ ...prev, culture: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={3}
                       sx={{ mb: 2 }}
                     />
                   </Grid>
@@ -2811,7 +3105,6 @@ function MyCompany() {
     </PageContainer>
   )
 }
-
 // My Profile Component
 function MyProfile() {
   const [userData, setUserData] = useState(null)
@@ -2829,9 +3122,10 @@ function MyProfile() {
     const loadUserData = async () => {
       try {
         setLoading(true)
-  const currentUser = roleUtils.getCurrentUser()
-        if (currentUser?.id) {
-          const response = await userAPI.getUserById(currentUser.id)
+        const response = await employerAPI.getMyProfile()
+        console.log('Employer profile response:', response)
+        
+        if (response) {
           setUserData(response)
           setFormData({
             fullName: response.fullName || '',
@@ -2854,14 +3148,19 @@ function MyProfile() {
 
   const handleSave = async () => {
     try {
-      await userAPI.updateProfile(formData)
-      setEditMode(false)
-      // Reload data
-      const currentUser = roleUtils.getCurrentUser()
-      if (currentUser?.id) {
-        const response = await userAPI.getUserById(currentUser.id)
-        setUserData(response)
+      const updateData = {
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        jobPosition: formData.jobPosition,
+        profilePicture: formData.profilePicture
       }
+      
+      const response = await employerAPI.updateProfile(updateData)
+      setUserData(response)
+      setEditMode(false)
+      
+      console.log('Profile updated successfully:', response)
     } catch (error) {
       console.error('Failed to save profile data:', error)
     }
@@ -3126,7 +3425,6 @@ function MyProfile() {
     </PageContainer>
   )
 }
-
 // Main Employer Dashboard Component
 export default function EmployerDashboard() {
   const [mobileOpen, setMobileOpen] = useState(false)
