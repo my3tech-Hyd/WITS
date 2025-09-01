@@ -520,107 +520,69 @@ public class JobSeekerController {
     }
 
     /**
-     * Download profile picture file
+     * Link existing documents to job seeker profile (for fixing orphaned documents)
      */
-    @GetMapping("/profile/picture/download")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadProfilePicture() {
+    @PostMapping("/profile/link-documents")
+    public ResponseEntity<String> linkExistingDocuments() {
         try {
             String currentUserId = SecurityUtil.getCurrentUserId();
-            log.info("Downloading profile picture for user: {}", currentUserId);
+            log.info("Linking existing documents for user: {}", currentUserId);
             
+            // Get or create the job seeker profile
             Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(currentUserId);
-            if (jobSeekerOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
+            JobSeeker jobSeeker;
+            
+            if (jobSeekerOpt.isPresent()) {
+                jobSeeker = jobSeekerOpt.get();
+                log.info("Found existing JobSeeker profile with ID: {}", jobSeeker.getId());
+            } else {
+                // Create new job seeker profile if it doesn't exist
+                jobSeeker = jobSeekerService.createJobSeekerFromUser(currentUserId);
+                log.info("Created new JobSeeker profile for user: {} with ID: {}", currentUserId, jobSeeker.getId());
             }
             
-            JobSeeker jobSeeker = jobSeekerOpt.get();
-            String profilePictureDocumentId = jobSeeker.getProfilePicture();
+            boolean updated = false;
             
-            if (profilePictureDocumentId == null || profilePictureDocumentId.isEmpty()) {
-                return ResponseEntity.notFound().build();
+            // Find and link resume document
+            if (jobSeeker.getResumeDocumentId() == null || jobSeeker.getResumeDocumentId().isEmpty()) {
+                List<com.wits.project.model.ProgramDocument> resumeDocs = documentService.getDocumentsByUserAndType(
+                    currentUserId, 
+                    com.wits.project.model.enums.Enums.ProgramType.RESUME
+                );
+                if (!resumeDocs.isEmpty()) {
+                    String resumeDocId = resumeDocs.get(0).getId();
+                    jobSeeker.setResumeDocumentId(resumeDocId);
+                    log.info("Linked resume document with ID: {}", resumeDocId);
+                    updated = true;
+                }
             }
             
-            // Get the document from ProgramDocument collection
-            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(profilePictureDocumentId);
-            if (documentOpt.isEmpty()) {
-                log.warn("Profile picture document not found with ID: {}", profilePictureDocumentId);
-                return ResponseEntity.notFound().build();
+            // Find and link cover letter document
+            if (jobSeeker.getCoverLetterDocumentId() == null || jobSeeker.getCoverLetterDocumentId().isEmpty()) {
+                List<com.wits.project.model.ProgramDocument> coverLetterDocs = documentService.getDocumentsByUserAndType(
+                    currentUserId, 
+                    com.wits.project.model.enums.Enums.ProgramType.COVER_LETTER
+                );
+                if (!coverLetterDocs.isEmpty()) {
+                    String coverLetterDocId = coverLetterDocs.get(0).getId();
+                    jobSeeker.setCoverLetterDocumentId(coverLetterDocId);
+                    log.info("Linked cover letter document with ID: {}", coverLetterDocId);
+                    updated = true;
+                }
             }
             
-            com.wits.project.model.ProgramDocument document = documentOpt.get();
-            
-            // Verify the document belongs to the current user
-            if (!document.getUserId().equals(currentUserId)) {
-                log.warn("Profile picture document does not belong to current user. Document user: {}, current user: {}", 
-                        document.getUserId(), currentUserId);
-                return ResponseEntity.status(403).build();
+            if (updated) {
+                // Save the updated profile
+                JobSeeker savedJobSeeker = jobSeekerService.saveJobSeekerProfile(jobSeeker);
+                log.info("Profile updated successfully. ResumeDocumentId: {}, CoverLetterDocumentId: {}", 
+                    savedJobSeeker.getResumeDocumentId(), savedJobSeeker.getCoverLetterDocumentId());
+                return ResponseEntity.ok("Documents linked successfully");
+            } else {
+                return ResponseEntity.ok("No documents to link");
             }
             
-            String filePath = document.getFileId();
-            
-            if (!fileStorageService.fileExists(filePath)) {
-                log.warn("Profile picture file not found at path: {}", filePath);
-                return ResponseEntity.notFound().build();
-            }
-            
-            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
-            org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
-            
-            return ResponseEntity.ok()
-                .header("Content-Type", document.getFileContentType())
-                .body(resource);
-                
         } catch (Exception e) {
-            log.error("Error downloading profile picture: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * Download profile picture file for employer (by user ID)
-     */
-    @GetMapping("/profile/picture/download/employer")
-    @PreAuthorize("hasRole('EMPLOYER')")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadProfilePictureForEmployer(@RequestParam String userId) {
-        try {
-            log.info("Employer downloading profile picture for user: {}", userId);
-            
-            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
-            if (jobSeekerOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            JobSeeker jobSeeker = jobSeekerOpt.get();
-            String profilePictureDocumentId = jobSeeker.getProfilePicture();
-            
-            if (profilePictureDocumentId == null || profilePictureDocumentId.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            // Get the document from ProgramDocument collection
-            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(profilePictureDocumentId);
-            if (documentOpt.isEmpty()) {
-                log.warn("Profile picture document not found with ID: {}", profilePictureDocumentId);
-                return ResponseEntity.notFound().build();
-            }
-            
-            com.wits.project.model.ProgramDocument document = documentOpt.get();
-            String filePath = document.getFileId();
-            
-            if (!fileStorageService.fileExists(filePath)) {
-                log.warn("Profile picture file not found at path: {}", filePath);
-                return ResponseEntity.notFound().build();
-            }
-            
-            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
-            org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
-            
-            return ResponseEntity.ok()
-                .header("Content-Type", document.getFileContentType())
-                .body(resource);
-                
-        } catch (Exception e) {
-            log.error("Error downloading profile picture for employer: {}", e.getMessage(), e);
+            log.error("Error linking documents: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }

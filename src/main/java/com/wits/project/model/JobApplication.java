@@ -34,7 +34,7 @@ public class JobApplication extends BaseDocument {
 
     private String notes;
     
-
+    private String rejectReason; // Reason for rejection when status is REJECTED
 }
 
 

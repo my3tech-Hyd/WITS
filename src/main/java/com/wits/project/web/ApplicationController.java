@@ -71,10 +71,13 @@ public class ApplicationController {
     @GetMapping("/job/{jobPostingId}/enriched")
     @PreAuthorize("hasRole('EMPLOYER')")
     public ResponseEntity<?> getJobApplicationsWithUserDetails(@PathVariable String jobPostingId) {
+        System.out.println("DEBUG: /job/{jobPostingId}/enriched endpoint called for jobPostingId: " + jobPostingId);
+        
         List<ApplicationService.ApplicationWithDetails> enrichedApplications = 
             applicationService.getApplicationsWithDetails(jobPostingId);
-
-            
+        
+        System.out.println("DEBUG: Found " + enrichedApplications.size() + " applications for job: " + jobPostingId);
+        
         return ResponseEntity.ok(enrichedApplications);
     }
 
@@ -86,6 +89,23 @@ public class ApplicationController {
             applicationService.getUserApplicationsWithJobDetails(userId);
         System.out.println("DEBUG: Test endpoint returning " + enrichedApplications.size() + " enriched applications");
         return ResponseEntity.ok(enrichedApplications);
+    }
+
+    // Test endpoint: Get all applications in database (for debugging)
+    @GetMapping("/test/all")
+    public ResponseEntity<?> testGetAllApplications() {
+        System.out.println("DEBUG: /test/all endpoint called");
+        List<JobApplication> allApplications = applications.findAll();
+        System.out.println("DEBUG: Found " + allApplications.size() + " total applications in database");
+        return ResponseEntity.ok(allApplications);
+    }
+
+    // Test endpoint: Get all job postings (for debugging)
+    @GetMapping("/test/jobs")
+    public ResponseEntity<?> testGetAllJobPostings() {
+        System.out.println("DEBUG: /test/jobs endpoint called");
+        // This would need to be injected, but for now let's just return a message
+        return ResponseEntity.ok("Job postings endpoint - would need JobPostingRepository injection");
     }
 
 
@@ -109,6 +129,18 @@ public class ApplicationController {
     public ResponseEntity<JobApplication> updateStatus(@RequestBody UpdateStatus req) {
         JobApplication a = applications.findById(req.applicationId).orElseThrow();
         a.setStatus(req.status);
+        
+        // If status is REJECTED, set the rejection reason
+        if (req.status == ApplicationStatus.REJECTED) {
+            if (req.rejectReason == null || req.rejectReason.trim().isEmpty()) {
+                throw new IllegalArgumentException("Rejection reason is required when status is REJECTED");
+            }
+            a.setRejectReason(req.rejectReason.trim());
+        } else {
+            // Clear rejection reason if status is not REJECTED
+            a.setRejectReason(null);
+        }
+        
         return ResponseEntity.ok(applications.save(a));
     }
 
@@ -167,7 +199,8 @@ public class ApplicationController {
     @Setter
     public static class UpdateStatus {
         public String applicationId;
-        public JobApplicationStatus status;
+        public ApplicationStatus status;
+        public String rejectReason; // Added rejectReason field
     }
 
     @Getter
