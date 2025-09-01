@@ -2,6 +2,8 @@ package com.wits.project.web;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.HashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -509,8 +511,12 @@ public class JobSeekerController {
             java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
             org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
             
+            // Get the original filename from the document or use the file path
+            String fileName = document.getDescription() != null ? document.getDescription() : fullPath.getFileName().toString();
+            
             return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=\"" + fullPath.getFileName().toString() + "\"")
+                .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                .header("Content-Type", document.getFileContentType() != null ? document.getFileContentType() : "application/octet-stream")
                 .body(resource);
                 
         } catch (Exception e) {
@@ -584,6 +590,323 @@ public class JobSeekerController {
         } catch (Exception e) {
             log.error("Error linking documents: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Link existing documents to job seeker profile for a specific user (employer access)
+     */
+    @PostMapping("/profile/link-documents/employer")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<String> linkExistingDocumentsForEmployer(@RequestParam String userId) {
+        try {
+            log.info("Employer linking existing documents for user: {}", userId);
+            
+            // Get or create the job seeker profile
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            JobSeeker jobSeeker;
+            
+            if (jobSeekerOpt.isPresent()) {
+                jobSeeker = jobSeekerOpt.get();
+                log.info("Found existing JobSeeker profile with ID: {}", jobSeeker.getId());
+            } else {
+                // Create new job seeker profile if it doesn't exist
+                jobSeeker = jobSeekerService.createJobSeekerFromUser(userId);
+                log.info("Created new JobSeeker profile for user: {} with ID: {}", userId, jobSeeker.getId());
+            }
+            
+            boolean updated = false;
+            
+            // Find and link resume document
+            if (jobSeeker.getResumeDocumentId() == null || jobSeeker.getResumeDocumentId().isEmpty()) {
+                List<com.wits.project.model.ProgramDocument> resumeDocs = documentService.getDocumentsByUserAndType(
+                    userId, 
+                    com.wits.project.model.enums.Enums.ProgramType.RESUME
+                );
+                if (!resumeDocs.isEmpty()) {
+                    String resumeDocId = resumeDocs.get(0).getId();
+                    jobSeeker.setResumeDocumentId(resumeDocId);
+                    log.info("Linked resume document with ID: {}", resumeDocId);
+                    updated = true;
+                }
+            }
+            
+            // Find and link cover letter document
+            if (jobSeeker.getCoverLetterDocumentId() == null || jobSeeker.getCoverLetterDocumentId().isEmpty()) {
+                List<com.wits.project.model.ProgramDocument> coverLetterDocs = documentService.getDocumentsByUserAndType(
+                    userId, 
+                    com.wits.project.model.enums.Enums.ProgramType.COVER_LETTER
+                );
+                if (!coverLetterDocs.isEmpty()) {
+                    String coverLetterDocId = coverLetterDocs.get(0).getId();
+                    jobSeeker.setCoverLetterDocumentId(coverLetterDocId);
+                    log.info("Linked cover letter document with ID: {}", coverLetterDocId);
+                    updated = true;
+                }
+            }
+            
+            if (updated) {
+                // Save the updated profile
+                JobSeeker savedJobSeeker = jobSeekerService.saveJobSeekerProfile(jobSeeker);
+                log.info("Profile updated successfully. ResumeDocumentId: {}, CoverLetterDocumentId: {}", 
+                    savedJobSeeker.getResumeDocumentId(), savedJobSeeker.getCoverLetterDocumentId());
+                return ResponseEntity.ok("Documents linked successfully");
+            } else {
+                return ResponseEntity.ok("No documents to link");
+            }
+            
+        } catch (Exception e) {
+            log.error("Error linking documents for employer: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get document information for employer (by user ID and document type)
+     */
+    @GetMapping("/profile/document-info/employer")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Map<String, Object>> getDocumentInfoForEmployer(
+            @RequestParam String userId, 
+            @RequestParam String documentType) {
+        try {
+            log.info("Employer getting document info for user: {}, document type: {}", userId, documentType);
+            
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            if (jobSeekerOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            JobSeeker jobSeeker = jobSeekerOpt.get();
+            String documentId = null;
+            
+            if ("resume".equalsIgnoreCase(documentType)) {
+                documentId = jobSeeker.getResumeDocumentId();
+            } else if ("coverLetter".equalsIgnoreCase(documentType)) {
+                documentId = jobSeeker.getCoverLetterDocumentId();
+            } else {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid document type"));
+            }
+            
+            if (documentId == null || documentId.isEmpty()) {
+                return ResponseEntity.ok(Map.of("exists", false, "message", "Document not found"));
+            }
+            
+            // Get the document from ProgramDocument collection
+            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(documentId);
+            if (documentOpt.isEmpty()) {
+                log.warn("Document not found with ID: {}", documentId);
+                return ResponseEntity.ok(Map.of("exists", false, "message", "Document not found"));
+            }
+            
+            com.wits.project.model.ProgramDocument document = documentOpt.get();
+            String filePath = document.getFileId();
+            
+            if (!fileStorageService.fileExists(filePath)) {
+                log.warn("File not found at path: {}", filePath);
+                return ResponseEntity.ok(Map.of("exists", false, "message", "File not found"));
+            }
+            
+            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("exists", true);
+            response.put("documentId", documentId);
+            response.put("fileName", fullPath.getFileName().toString());
+            response.put("filePath", filePath);
+            response.put("fileSize", document.getFileSizeBytes());
+            response.put("contentType", document.getFileContentType());
+            response.put("description", document.getDescription());
+            
+            return ResponseEntity.ok(response);
+                
+        } catch (Exception e) {
+            log.error("Error getting document info for employer: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    /**
+     * Check document availability for a specific user (employer access)
+     */
+    @GetMapping("/profile/documents/check/employer")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Map<String, Object>> checkDocumentAvailability(@RequestParam String userId) {
+        try {
+            log.info("Employer checking document availability for user: {}", userId);
+            
+            // Check if user exists
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            if (jobSeekerOpt.isEmpty()) {
+                return ResponseEntity.ok(Map.of(
+                    "resumeAvailable", false,
+                    "coverLetterAvailable", false,
+                    "message", "User not found"
+                ));
+            }
+            
+            // Check for resume documents in program_documents table
+            List<com.wits.project.model.ProgramDocument> resumeDocs = documentService.getDocumentsByUserAndType(
+                userId, 
+                com.wits.project.model.enums.Enums.ProgramType.RESUME
+            );
+            
+            // Check for cover letter documents in program_documents table
+            List<com.wits.project.model.ProgramDocument> coverLetterDocs = documentService.getDocumentsByUserAndType(
+                userId, 
+                com.wits.project.model.enums.Enums.ProgramType.COVER_LETTER
+            );
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("resumeAvailable", !resumeDocs.isEmpty());
+            response.put("coverLetterAvailable", !coverLetterDocs.isEmpty());
+            response.put("resumeCount", resumeDocs.size());
+            response.put("coverLetterCount", coverLetterDocs.size());
+            
+            if (!resumeDocs.isEmpty()) {
+                response.put("resumeDocumentId", resumeDocs.get(0).getId());
+                response.put("resumeFileName", resumeDocs.get(0).getDescription());
+            }
+            
+            if (!coverLetterDocs.isEmpty()) {
+                response.put("coverLetterDocumentId", coverLetterDocs.get(0).getId());
+                response.put("coverLetterFileName", coverLetterDocs.get(0).getDescription());
+            }
+            
+            log.info("Document availability check completed for user {}: resume={}, coverLetter={}", 
+                userId, !resumeDocs.isEmpty(), !coverLetterDocs.isEmpty());
+            
+            return ResponseEntity.ok(response);
+                
+        } catch (Exception e) {
+            log.error("Error checking document availability: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    /**
+     * Get direct file access URL for a document (employer access)
+     */
+    @GetMapping("/profile/document-url/employer")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Map<String, Object>> getDocumentUrl(@RequestParam String userId, @RequestParam String documentType) {
+        try {
+            log.info("Employer getting document URL for user: {}, document type: {}", userId, documentType);
+            
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            if (jobSeekerOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            JobSeeker jobSeeker = jobSeekerOpt.get();
+            String documentId = null;
+            
+            if ("resume".equalsIgnoreCase(documentType)) {
+                documentId = jobSeeker.getResumeDocumentId();
+            } else if ("coverLetter".equalsIgnoreCase(documentType)) {
+                documentId = jobSeeker.getCoverLetterDocumentId();
+            } else {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid document type"));
+            }
+            
+            if (documentId == null || documentId.isEmpty()) {
+                return ResponseEntity.ok(Map.of("available", false, "message", "Document not found"));
+            }
+            
+            // Get the document from ProgramDocument collection
+            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(documentId);
+            if (documentOpt.isEmpty()) {
+                log.warn("Document not found with ID: {}", documentId);
+                return ResponseEntity.ok(Map.of("available", false, "message", "Document not found"));
+            }
+            
+            com.wits.project.model.ProgramDocument document = documentOpt.get();
+            String filePath = document.getFileId();
+            
+            if (!fileStorageService.fileExists(filePath)) {
+                log.warn("File not found at path: {}", filePath);
+                return ResponseEntity.ok(Map.of("available", false, "message", "File not found"));
+            }
+            
+            // Create direct access URL
+            String directUrl = "/uploads/" + filePath; // Use /uploads/ prefix to match working URL structure
+            String fileName = document.getDescription() != null ? document.getDescription() : filePath;
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("available", true);
+            response.put("directUrl", directUrl);
+            response.put("fileName", fileName);
+            response.put("fileSize", document.getFileSizeBytes());
+            response.put("contentType", document.getFileContentType());
+            
+            log.info("Document URL generated for user {}: {}", userId, directUrl);
+            
+            return ResponseEntity.ok(response);
+                
+        } catch (Exception e) {
+            log.error("Error getting document URL: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    /**
+     * Debug endpoint to check file structure (temporary)
+     */
+    @GetMapping("/debug/file-structure")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Map<String, Object>> debugFileStructure(@RequestParam String userId) {
+        try {
+            log.info("Debugging file structure for user: {}", userId);
+            
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            if (jobSeekerOpt.isEmpty()) {
+                return ResponseEntity.ok(Map.of("error", "User not found"));
+            }
+            
+            JobSeeker jobSeeker = jobSeekerOpt.get();
+            Map<String, Object> response = new HashMap<>();
+            
+            // Check resume
+            if (jobSeeker.getResumeDocumentId() != null) {
+                Optional<com.wits.project.model.ProgramDocument> resumeDoc = documentService.getDocumentById(jobSeeker.getResumeDocumentId());
+                if (resumeDoc.isPresent()) {
+                    String filePath = resumeDoc.get().getFileId();
+                    java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+                    boolean exists = fileStorageService.fileExists(filePath);
+                    
+                    response.put("resume", Map.of(
+                        "documentId", jobSeeker.getResumeDocumentId(),
+                        "fileId", filePath,
+                        "fullPath", fullPath.toString(),
+                        "exists", exists,
+                        "absolutePath", fullPath.toAbsolutePath().toString()
+                    ));
+                }
+            }
+            
+            // Check cover letter
+            if (jobSeeker.getCoverLetterDocumentId() != null) {
+                Optional<com.wits.project.model.ProgramDocument> coverLetterDoc = documentService.getDocumentById(jobSeeker.getCoverLetterDocumentId());
+                if (coverLetterDoc.isPresent()) {
+                    String filePath = coverLetterDoc.get().getFileId();
+                    java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+                    boolean exists = fileStorageService.fileExists(filePath);
+                    
+                    response.put("coverLetter", Map.of(
+                        "documentId", jobSeeker.getCoverLetterDocumentId(),
+                        "fileId", filePath,
+                        "fullPath", fullPath.toString(),
+                        "exists", exists,
+                        "absolutePath", fullPath.toAbsolutePath().toString()
+                    ));
+                }
+            }
+            
+            return ResponseEntity.ok(response);
+                
+        } catch (Exception e) {
+            log.error("Error debugging file structure: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Internal server error"));
         }
     }
 

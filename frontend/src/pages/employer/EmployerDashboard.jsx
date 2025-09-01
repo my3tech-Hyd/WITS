@@ -393,6 +393,14 @@ function MyJobPostings() {
     error: null
   })
 
+  // Document info state
+  const [documentInfo, setDocumentInfo] = useState({
+    resume: null,
+    coverLetter: null,
+    loading: false,
+    error: null
+  })
+
   useEffect(() => {
       const loadJobs = async () => {
     try {
@@ -583,15 +591,52 @@ function MyJobPostings() {
       console.log('🔍 Resume document ID:', userProfile?.jobSeeker?.resumeDocumentId)
       console.log('🔍 Cover letter document ID:', userProfile?.jobSeeker?.coverLetterDocumentId)
 
-      // Open the applicant details modal with complete data
-      setApplicantsModal(prev => ({
-        ...prev,
-        selectedApplicant: {
-          ...application,
-          profile: userProfile,
-          jobSeekerProfile: userProfile?.jobSeeker
+      // Try to link existing documents if they're not already linked
+      if (!userProfile?.jobSeeker?.resumeDocumentId || !userProfile?.jobSeeker?.coverLetterDocumentId) {
+        console.log('🔗 Attempting to link existing documents...')
+        try {
+          await userAPI.linkExistingDocuments(userId)
+          console.log('✅ Documents linked successfully')
+          
+          // Fetch updated profile after linking
+          const updatedProfile = await userAPI.getUserProfileById(userId)
+          console.log('✅ Updated profile with linked documents:', updatedProfile)
+          
+          // Open the applicant details modal with updated data
+          setApplicantsModal(prev => ({
+            ...prev,
+            selectedApplicant: {
+              ...application,
+              profile: updatedProfile,
+              jobSeekerProfile: updatedProfile?.jobSeeker
+            }
+          }))
+        } catch (linkError) {
+          console.warn('⚠️ Failed to link documents:', linkError)
+          // Continue with original profile data
+          setApplicantsModal(prev => ({
+            ...prev,
+            selectedApplicant: {
+              ...application,
+              profile: userProfile,
+              jobSeekerProfile: userProfile?.jobSeeker
+            }
+          }))
         }
-      }))
+      } else {
+        // Open the applicant details modal with complete data
+        setApplicantsModal(prev => ({
+          ...prev,
+          selectedApplicant: {
+            ...application,
+            profile: userProfile,
+            jobSeekerProfile: userProfile?.jobSeeker
+          }
+        }))
+        
+        // Load document information
+        await loadDocumentInfo(userId)
+      }
       
       console.log('✅ Applicant details modal opened with profile data')
     } catch (error) {
@@ -931,7 +976,7 @@ function MyJobPostings() {
                   <TableCell sx={{ color: 'white', fontWeight: 600 }}>Company</TableCell>
                   <TableCell sx={{ color: 'white', fontWeight: 600 }}>Location</TableCell>
                   <TableCell sx={{ color: 'white', fontWeight: 600 }}>Status</TableCell>
-                  <TableCell sx={{ color: 'white', fontWeight: 600 }}>Applications</TableCell>
+                  {/* <TableCell sx={{ color: 'white', fontWeight: 600 }}>Applications</TableCell> */}
                   <TableCell sx={{ color: 'white', fontWeight: 600 }}>Posted Date</TableCell>
                   <TableCell sx={{ color: 'white', fontWeight: 600 }}>Actions</TableCell>
                 </TableRow>
@@ -971,11 +1016,11 @@ function MyJobPostings() {
                           sx={{ fontWeight: 500 }}
                         />
                       </TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <Typography variant="body2">
-                          {job.applications || 0}
+                          {job.applications?.length || 0}
                         </Typography>
-                      </TableCell>
+                      </TableCell> */}
                       <TableCell>
                         <Typography variant="body2">
                           {formatDate(job.postedDate)}
@@ -2101,6 +2146,22 @@ function ViewApplicants() {
     error: null
   });
 
+  // Document info state
+  const [documentInfo, setDocumentInfo] = useState({
+    resume: null,
+    coverLetter: null,
+    loading: false,
+    error: null
+  });
+
+  // Document availability state
+  const [documentAvailability, setDocumentAvailability] = useState({
+    resumeAvailable: false,
+    coverLetterAvailable: false,
+    loading: false,
+    error: null
+  });
+
   useEffect(() => {
     const loadApplications = async () => {
       try {
@@ -2179,6 +2240,82 @@ function ViewApplicants() {
 
   const totalApplications = applications.length
   const filteredCount = filteredApplications.length
+
+  // Simple direct download function using the working URL structure
+  const downloadDocumentDirect = async (userId, documentType) => {
+    try {
+      console.log(`📄 Direct download for ${documentType} user:`, userId)
+      
+      // Get the document URL
+      const documentUrlResponse = await userAPI.getDocumentUrl(userId, documentType)
+      console.log(`📄 Document URL response:`, documentUrlResponse)
+      
+      if (documentUrlResponse.available && documentUrlResponse.directUrl) {
+        console.log(`✅ Direct download URL:`, documentUrlResponse.directUrl)
+        
+        // Create download link
+        const link = document.createElement('a')
+        link.href = documentUrlResponse.directUrl
+        link.download = documentUrlResponse.fileName || `${documentType}_${userId}.pdf`
+        link.target = '_blank'
+        
+        // Trigger download
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
+        console.log(`✅ ${documentType} download initiated`)
+      } else {
+        console.warn(`⚠️ Document not available for direct download`)
+        alert(`Document not available for download`)
+      }
+      
+    } catch (error) {
+      console.error(`❌ Failed to download ${documentType}:`, error)
+      alert(`Failed to download ${documentType}: ${error.message}`)
+    }
+  }
+
+  // Load document information and availability
+  const loadDocumentInfo = async (userId) => {
+    try {
+      setDocumentInfo(prev => ({ ...prev, loading: true, error: null }))
+      setDocumentAvailability(prev => ({ ...prev, loading: true, error: null }))
+      console.log(`🔍 Loading document info and availability for user: ${userId}`)
+      
+      // Check document availability from program_documents table
+      const availabilityResponse = await userAPI.checkDocumentAvailability(userId)
+      console.log(`📄 Document availability:`, availabilityResponse)
+      
+      setDocumentAvailability({
+        resumeAvailable: availabilityResponse.resumeAvailable || false,
+        coverLetterAvailable: availabilityResponse.coverLetterAvailable || false,
+        loading: false,
+        error: null
+      })
+      
+      // Load detailed document info if available
+      const [resumeInfo, coverLetterInfo] = await Promise.allSettled([
+        availabilityResponse.resumeAvailable ? userAPI.getDocumentInfo(userId, 'resume') : Promise.resolve(null),
+        availabilityResponse.coverLetterAvailable ? userAPI.getDocumentInfo(userId, 'coverLetter') : Promise.resolve(null)
+      ])
+      
+      const newDocumentInfo = {
+        resume: resumeInfo.status === 'fulfilled' ? resumeInfo.value : null,
+        coverLetter: coverLetterInfo.status === 'fulfilled' ? coverLetterInfo.value : null,
+        loading: false,
+        error: null
+      }
+      
+      setDocumentInfo(newDocumentInfo)
+      console.log(`✅ Document info and availability loaded:`, { availability: availabilityResponse, info: newDocumentInfo })
+      
+    } catch (error) {
+      console.error(`❌ Failed to load document info:`, error)
+      setDocumentInfo(prev => ({ ...prev, loading: false, error: error.message }))
+      setDocumentAvailability(prev => ({ ...prev, loading: false, error: error.message }))
+    }
+  }
 
   const handleUpdateApplicationStatus = async (applicationId, newStatus, rejectReason = null) => {
     try {
@@ -2415,6 +2552,9 @@ function ViewApplicants() {
           profile: applicantProfile
         }
       }))
+      
+      // Load document information
+      await loadDocumentInfo(userId)
     } catch (error) {
       console.error('❌ Failed to load applicant details:', error)
       alert('Failed to load applicant details: ' + error.message)
@@ -2427,23 +2567,34 @@ function ViewApplicants() {
       
       // Check if user has a resume document ID
       const applicantProfile = await userAPI.getUserProfileById(userId)
-      if (!applicantProfile?.resumeDocumentId) {
-        alert('No resume document found for this applicant')
-        return
-      }
+      console.log('📄 Applicant profile:', applicantProfile, applicantProfile.resumeDocument)
+      // if (!applicantProfile?.resumeDocument?.fileId) {
+      //   alert('No resume document found for this applicant')
+      //   return
+      // }
       
-      console.log('📄 Resume document ID:', applicantProfile.resumeDocumentId)
-      const blob = await userAPI.downloadResume(userId)
+      console.log('📄 Resume document ID:', applicantProfile.resumeDocument?.fileId)
       
-      // Create download link
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `resume_${userId}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
+      let url = "http://localhost:8082/uploads/" + applicantProfile.resumeDocument?.fileId
+      // const blob = await userAPI.downloadResume(userId)
+      // window.open(url, "_blank");
+
+      const link = document.createElement("a");
+  link.href = url;
+  link.download = `resume_${userId}.pdf`; // Optional name
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+      
+      // // Create download link
+      // const url = window.URL.createObjectURL(blob)
+      // const link = document.createElement('a')
+      // link.href = url
+      // link.download = `resume_${userId}.pdf`
+      // document.body.appendChild(link)
+      // link.click()
+      // document.body.removeChild(link)
+      // window.URL.revokeObjectURL(url)
       
       console.log('✅ Resume downloaded successfully')
     } catch (error) {
@@ -2491,6 +2642,110 @@ function ViewApplicants() {
     }
   }
 
+  const openDocumentInNewTab = async (userId, documentType) => {
+    try {
+      console.log(`📄 Opening ${documentType} in new tab for user:`, userId)
+      
+      // First, try to get direct file URL
+      console.log(`🔍 Getting direct file URL for ${documentType}...`)
+      const documentUrlResponse = await userAPI.getDocumentUrl(userId, documentType)
+      console.log(`📄 Document URL response:`, documentUrlResponse)
+      
+      if (documentUrlResponse.available && documentUrlResponse.directUrl) {
+        console.log(`✅ Direct file URL available:`, documentUrlResponse.directUrl)
+        
+        // Open the direct URL in a new tab
+        const newTab = window.open(documentUrlResponse.directUrl, '_blank')
+        
+        if (newTab) {
+          console.log(`✅ ${documentType} opened in new tab using direct URL`)
+          console.log(`📄 File details: ${documentUrlResponse.fileName} (${documentUrlResponse.fileSize} bytes)`)
+        } else {
+          console.warn(`⚠️ Popup blocked, trying to download instead`)
+          // Fallback to download if popup is blocked
+          const link = document.createElement('a')
+          link.href = documentUrlResponse.directUrl
+          link.download = documentUrlResponse.fileName || `${documentType}_${userId}.pdf`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          console.log(`📄 Document downloaded as: ${documentUrlResponse.fileName}`)
+        }
+        return
+      }
+      
+      // Fallback: Get document information and download as blob
+      console.log(`🔍 Direct URL not available, falling back to blob download...`)
+      const documentInfo = await userAPI.getDocumentInfo(userId, documentType)
+      console.log(`📄 Document info:`, documentInfo)
+      
+      if (!documentInfo.exists) {
+        console.warn(`⚠️ Document does not exist:`, documentInfo.message)
+        alert(`Document not available: ${documentInfo.message}`)
+        return
+      }
+      
+      console.log(`✅ Document exists:`, {
+        fileName: documentInfo.fileName,
+        filePath: documentInfo.filePath,
+        fileSize: documentInfo.fileSize,
+        contentType: documentInfo.contentType
+      })
+      
+      // Get the document blob from the backend
+      let blob
+      if (documentType === 'resume') {
+        console.log(`📄 Downloading resume for user: ${userId}`)
+        blob = await userAPI.downloadResume(userId)
+      } else if (documentType === 'coverLetter') {
+        console.log(`📄 Downloading cover letter for user: ${userId}`)
+        blob = await userAPI.downloadCoverLetter(userId)
+      }
+      
+      console.log(`✅ Document blob received:`, blob)
+      console.log(`📄 Blob size:`, blob.size)
+      console.log(`📄 Blob type:`, blob.type)
+      
+      // Create a URL for the blob
+      const url = window.URL.createObjectURL(blob)
+      console.log(`📄 Created blob URL:`, url)
+      
+      // Open in new tab
+      const newTab = window.open(url, '_blank')
+      
+      if (newTab) {
+        console.log(`✅ ${documentType} opened in new tab successfully`)
+        console.log(`📄 File details: ${documentInfo.fileName} (${documentInfo.fileSize} bytes)`)
+      } else {
+        console.warn(`⚠️ Popup blocked, trying to download instead`)
+        // Fallback to download if popup is blocked
+        const link = document.createElement('a')
+        link.href = url
+        link.download = documentInfo.fileName || `${documentType}_${userId}.pdf`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        console.log(`📄 Document downloaded as: ${documentInfo.fileName}`)
+      }
+      
+      // Clean up the URL after a delay
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url)
+        console.log(`🧹 Cleaned up blob URL`)
+      }, 1000)
+      
+    } catch (error) {
+      console.error(`❌ Failed to open ${documentType}:`, error)
+      console.error(`❌ Error details:`, {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      })
+      alert(`Failed to open ${documentType}: ${error.message}`)
+    }
+  }
+
   const loadDocumentContent = async (userId, documentType) => {
     try {
       console.log(`📄 Loading ${documentType} content for user:`, userId);
@@ -2521,80 +2776,6 @@ function ViewApplicants() {
       }));
     }
   };
-
-  const openDocumentInNewTab = async (userId, documentType) => {
-    try {
-      console.log(`📄 Opening ${documentType} in new tab for user:`, userId)
-      
-      // Check if document exists
-      const applicantProfile = await userAPI.getUserProfileById(userId)
-      console.log(`🔍 Applicant profile:`, applicantProfile)
-      console.log(`🔍 JobSeeker data:`, applicantProfile?.jobSeeker)
-      
-      const documentId = documentType === 'resume' ? 
-        applicantProfile?.jobSeeker?.resumeDocumentId || applicantProfile?.resumeDocumentId : 
-        applicantProfile?.jobSeeker?.coverLetterDocumentId || applicantProfile?.coverLetterDocumentId
-      
-      console.log(`🔍 Document ID for ${documentType}:`, documentId)
-      
-      if (!documentId) {
-        console.warn(`⚠️ No ${documentType} document ID found`)
-        console.log(`🔍 Full profile structure:`, JSON.stringify(applicantProfile, null, 2))
-        alert(`No ${documentType} document found for this applicant`)
-        return
-      }
-      
-      // Get the document blob
-      let blob
-      if (documentType === 'resume') {
-        console.log(`📄 Downloading resume for user: ${userId}`)
-        blob = await userAPI.downloadResume(userId)
-      } else if (documentType === 'coverLetter') {
-        console.log(`📄 Downloading cover letter for user: ${userId}`)
-        blob = await userAPI.downloadCoverLetter(userId)
-      }
-      
-      console.log(`✅ Document blob received:`, blob)
-      console.log(`📄 Blob size:`, blob.size)
-      console.log(`📄 Blob type:`, blob.type)
-      
-      // Create a URL for the blob
-      const url = window.URL.createObjectURL(blob)
-      console.log(`📄 Created blob URL:`, url)
-      
-      // Open in new tab
-      const newTab = window.open(url, '_blank')
-      
-      if (newTab) {
-        console.log(`✅ ${documentType} opened in new tab successfully`)
-      } else {
-        console.warn(`⚠️ Popup blocked, trying to download instead`)
-        // Fallback to download if popup is blocked
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `${documentType}_${userId}.pdf`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-      
-      // Clean up the URL after a delay
-      setTimeout(() => {
-        window.URL.revokeObjectURL(url)
-        console.log(`🧹 Cleaned up blob URL`)
-      }, 1000)
-      
-    } catch (error) {
-      console.error(`❌ Failed to open ${documentType}:`, error)
-      console.error(`❌ Error details:`, {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        statusText: error.response?.statusText
-      })
-      alert(`Failed to open ${documentType}: ${error.message}`)
-    }
-  }
 
   // Helper function to get application status color
   const getApplicationStatusColor = (status) => {
@@ -3346,6 +3527,9 @@ function ViewApplicants() {
                 <Grid item xs={12}>
                   <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
                     Documents
+                    {documentAvailability.loading && (
+                      <CircularProgress size={16} sx={{ ml: 1 }} />
+                    )}
                   </Typography>
                 </Grid>
                 
@@ -3363,10 +3547,16 @@ function ViewApplicants() {
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2">Resume</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {applicantsModal.selectedApplicant?.profile?.resumeDocumentId ? 'Available' : 'Not uploaded'}
+                        {documentAvailability.resumeAvailable ? 
+                          (documentInfo.resume?.fileName ? 
+                            `${documentInfo.resume.fileName} (${Math.round(documentInfo.resume.fileSize / 1024)} KB)` : 
+                            'Available for download'
+                          ) : 
+                          'Not uploaded'
+                        }
                       </Typography>
                     </Box>
-                    {applicantsModal.selectedApplicant?.profile?.resumeDocumentId && (
+                    {documentAvailability.resumeAvailable && (
                       <Button
                         size="small"
                         variant="outlined"
@@ -3395,16 +3585,22 @@ function ViewApplicants() {
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2">Cover Letter</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId ? 'Available' : 'Not uploaded'}
+                        {documentAvailability.coverLetterAvailable ? 
+                          (documentInfo.coverLetter?.fileName ? 
+                            `${documentInfo.coverLetter.fileName} (${Math.round(documentInfo.coverLetter.fileSize / 1024)} KB)` : 
+                            'Available for download'
+                          ) : 
+                          'Not uploaded'
+                        }
                       </Typography>
                     </Box>
-                    {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId && (
+                    {documentAvailability.coverLetterAvailable && (
                       <Button
                         size="small"
                         variant="outlined"
                         onClick={() => {
                           const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
-                          if (userId) handleDownloadCoverLetter(userId)
+                          if (userId) downloadDocumentDirect(userId, 'coverLetter')
                         }}
                       >
                         Download
@@ -3412,6 +3608,122 @@ function ViewApplicants() {
                     )}
                   </Box>
                 </Grid>
+
+                {/* Document Actions */}
+                {(documentAvailability.resumeAvailable || documentAvailability.coverLetterAvailable) && (
+                  <Grid item xs={12}>
+                    <Box sx={{ 
+                      mt: 2, 
+                      p: 2, 
+                      border: '1px solid', 
+                      borderColor: 'divider', 
+                      borderRadius: 2,
+                      backgroundColor: 'grey.50'
+                    }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                        Quick Actions
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        {documentAvailability.resumeAvailable && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<Description />}
+                            onClick={() => {
+                              const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                              if (userId) openDocumentInNewTab(userId, 'resume')
+                            }}
+                          >
+                            Open Resume
+                          </Button>
+                        )}
+                        {documentAvailability.coverLetterAvailable && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<Description />}
+                            onClick={() => {
+                              const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                              if (userId) openDocumentInNewTab(userId, 'coverLetter')
+                            }}
+                          >
+                            Open Cover Letter
+                          </Button>
+                        )}
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="secondary"
+                          onClick={async () => {
+                            const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                            if (userId) {
+                              try {
+                                console.log('🔗 Linking documents for user:', userId)
+                                await userAPI.linkExistingDocuments(userId)
+                                console.log('✅ Documents linked successfully')
+                                
+                                // Refresh the applicant data
+                                const updatedProfile = await userAPI.getUserProfileById(userId)
+                                setApplicantsModal(prev => ({
+                                  ...prev,
+                                  selectedApplicant: {
+                                    ...prev.selectedApplicant,
+                                    profile: updatedProfile,
+                                    jobSeekerProfile: updatedProfile?.jobSeeker
+                                  }
+                                }))
+                                
+                                alert('Documents linked successfully! Please try opening the documents now.')
+                              } catch (error) {
+                                console.error('❌ Failed to link documents:', error)
+                                alert('Failed to link documents: ' + error.message)
+                              }
+                            }
+                          }}
+                        >
+                          Link Documents
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => {
+                            const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                            if (userId) {
+                              console.log('🔍 Testing document access for user:', userId)
+                              console.log('🔍 Profile data:', applicantsModal.selectedApplicant?.profile)
+                              console.log('🔍 JobSeeker data:', applicantsModal.selectedApplicant?.profile?.jobSeeker)
+                              console.log('🔍 Document availability:', documentAvailability)
+                              alert(`Testing documents for user: ${userId}\nCheck console for details.`)
+                            }
+                          }}
+                        >
+                          Debug Documents
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          onClick={async () => {
+                            const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                            if (userId) {
+                              try {
+                                console.log('🔍 Debugging file structure for user:', userId)
+                                const fileStructure = await userAPI.debugFileStructure(userId)
+                                console.log('📄 File structure debug info:', fileStructure)
+                                alert(`File structure debug info for user: ${userId}\nCheck console for details.`)
+                              } catch (error) {
+                                console.error('❌ Failed to debug file structure:', error)
+                                alert('Failed to debug file structure: ' + error.message)
+                              }
+                            }
+                          }}
+                        >
+                          Debug File Structure
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Grid>
+                )}
               </Grid>
             </Box>
           ) : (
@@ -3560,32 +3872,7 @@ function ViewApplicants() {
                 {applicantsModal.selectedApplicant?.profile?.jobSeeker?.firstName} {applicantsModal.selectedApplicant?.profile?.jobSeeker?.lastName}
               </Typography>
             </Box>
-            {applicantsModal.selectedApplicant?.profile && (
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<Description />}
-                  onClick={() => {
-                    const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
-                    if (userId) handleDownloadResume(userId)
-                  }}
-                  disabled={!applicantsModal.selectedApplicant?.profile?.resumeDocumentId}
-                >
-                  Download Resume
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<Description />}
-                  onClick={() => {
-                    const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
-                    if (userId) handleDownloadCoverLetter(userId)
-                  }}
-                  disabled={!applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId}
-                >
-                  Download Cover Letter
-                </Button>
-              </Box>
-            )}
+        
           </Box>
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
@@ -3836,10 +4123,16 @@ function ViewApplicants() {
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2">Resume</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {applicantsModal.selectedApplicant?.profile?.resumeDocumentId ? 'Available' : 'Not uploaded'}
+                        {documentAvailability.resumeAvailable ? 
+                          (documentInfo.resume?.fileName ? 
+                            `${documentInfo.resume.fileName} (${Math.round(documentInfo.resume.fileSize / 1024)} KB)` : 
+                            'Available for download'
+                          ) : 
+                          'Not uploaded'
+                        }
                       </Typography>
                     </Box>
-                    {applicantsModal.selectedApplicant?.profile?.resumeDocumentId && (
+                    {documentAvailability.resumeAvailable && (
                       <Button
                         size="small"
                         variant="outlined"
@@ -3868,10 +4161,13 @@ function ViewApplicants() {
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2">Cover Letter</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId ? 'Available' : 'Not uploaded'}
+                        {documentInfo.coverLetter?.exists ? 
+                          `${documentInfo.coverLetter.fileName} (${Math.round(documentInfo.coverLetter.fileSize / 1024)} KB)` : 
+                          'Not uploaded'
+                        }
                       </Typography>
                     </Box>
-                    {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId && (
+                    {documentInfo.coverLetter?.exists && (
                       <Button
                         size="small"
                         variant="outlined"
@@ -3887,7 +4183,7 @@ function ViewApplicants() {
                 </Grid>
 
                 {/* Document Actions */}
-                {(applicantsModal.selectedApplicant?.profile?.resumeDocumentId || applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId) && (
+                {(documentInfo.resume?.exists || documentInfo.coverLetter?.exists) && (
                   <Grid item xs={12}>
                     <Box sx={{ 
                       mt: 2, 
@@ -3901,7 +4197,7 @@ function ViewApplicants() {
                         Quick Actions
                       </Typography>
                       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                        {applicantsModal.selectedApplicant?.profile?.resumeDocumentId && (
+                        {documentInfo.resume?.exists && (
                           <Button
                             size="small"
                             variant="contained"
@@ -3914,7 +4210,7 @@ function ViewApplicants() {
                             Open Resume
                           </Button>
                         )}
-                        {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId && (
+                        {documentInfo.coverLetter?.exists && (
                           <Button
                             size="small"
                             variant="contained"
@@ -3927,7 +4223,75 @@ function ViewApplicants() {
                             Open Cover Letter
                           </Button>
                         )}
-                       
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="secondary"
+                          onClick={async () => {
+                            const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                            if (userId) {
+                              try {
+                                console.log('🔗 Linking documents for user:', userId)
+                                await userAPI.linkExistingDocuments(userId)
+                                console.log('✅ Documents linked successfully')
+                                
+                                // Refresh the applicant data
+                                const updatedProfile = await userAPI.getUserProfileById(userId)
+                                setApplicantsModal(prev => ({
+                                  ...prev,
+                                  selectedApplicant: {
+                                    ...prev.selectedApplicant,
+                                    profile: updatedProfile,
+                                    jobSeekerProfile: updatedProfile?.jobSeeker
+                                  }
+                                }))
+                                
+                                alert('Documents linked successfully! Please try opening the documents now.')
+                              } catch (error) {
+                                console.error('❌ Failed to link documents:', error)
+                                alert('Failed to link documents: ' + error.message)
+                              }
+                            }
+                          }}
+                        >
+                          Link Documents
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => {
+                            const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                            if (userId) {
+                              console.log('🔍 Testing document access for user:', userId)
+                              console.log('🔍 Profile data:', applicantsModal.selectedApplicant?.profile)
+                              console.log('🔍 JobSeeker data:', applicantsModal.selectedApplicant?.profile?.jobSeeker)
+                              alert(`Testing documents for user: ${userId}\nCheck console for details.`)
+                            }
+                          }}
+                        >
+                          Debug Documents
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          onClick={async () => {
+                            const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                            if (userId) {
+                              try {
+                                console.log('🔍 Debugging file structure for user:', userId)
+                                const fileStructure = await userAPI.debugFileStructure(userId)
+                                console.log('📄 File structure debug info:', fileStructure)
+                                alert(`File structure debug info for user: ${userId}\nCheck console for details.`)
+                              } catch (error) {
+                                console.error('❌ Failed to debug file structure:', error)
+                                alert('Failed to debug file structure: ' + error.message)
+                              }
+                            }
+                          }}
+                        >
+                          Debug File Structure
+                        </Button>
                       </Box>
                     </Box>
                   </Grid>

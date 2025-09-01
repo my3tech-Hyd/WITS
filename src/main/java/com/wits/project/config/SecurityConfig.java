@@ -7,9 +7,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.wits.project.security.JwtAuthFilter;
 
 import java.util.Arrays;
@@ -17,7 +16,7 @@ import java.util.Arrays;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
-public class SecurityConfig {
+public class SecurityConfig implements WebMvcConfigurer {
     private final JwtAuthFilter jwtAuthFilter;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
@@ -30,7 +29,8 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/api/users/register", "/", "/health", "/error").permitAll()
+                .requestMatchers("/api/auth/**", "/api/users/register", "/", "/health", "/error", "/users").permitAll()
+                .requestMatchers("/uploads/**").permitAll() // Allow access to uploaded files
                 .anyRequest().authenticated()
             )
             .httpBasic(basic -> basic.disable())
@@ -40,18 +40,20 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173", "http://localhost:3000"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // Serve uploaded files from the uploads directory
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:uploads/");
         
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
+        // Serve files from the root directory (for user-specific paths)
+        registry.addResourceHandler("/user*/**")
+                .addResourceLocations("file:./");
+        
+        // Serve files from the current directory (fallback)
+        registry.addResourceHandler("/**")
+                .addResourceLocations("file:./")
+                .setCachePeriod(0);
     }
 }
 

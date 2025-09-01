@@ -100,6 +100,56 @@ export const userAPI = {
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to download cover letter')
     }
+  },
+
+  // Link existing documents to job seeker profile
+  linkExistingDocuments: async (userId) => {
+    try {
+      const response = await api.post(`/jobseekers/profile/link-documents/employer?userId=${userId}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to link documents')
+    }
+  },
+
+  // Get document information for a specific user (employer access)
+  getDocumentInfo: async (userId, documentType) => {
+    try {
+      const response = await api.get(`/jobseekers/profile/document-info/employer?userId=${userId}&documentType=${documentType}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get document info')
+    }
+  },
+
+  // Check document availability for a specific user (employer access)
+  checkDocumentAvailability: async (userId) => {
+    try {
+      const response = await api.get(`/jobseekers/profile/documents/check/employer?userId=${userId}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to check document availability')
+    }
+  },
+
+  // Get direct file access URL for a document (employer access)
+  getDocumentUrl: async (userId, documentType) => {
+    try {
+      const response = await api.get(`/jobseekers/profile/document-url/employer?userId=${userId}&documentType=${documentType}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get document URL')
+    }
+  },
+
+  // Debug file structure (temporary)
+  debugFileStructure: async (userId) => {
+    try {
+      const response = await api.get(`/jobseekers/debug/file-structure?userId=${userId}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to debug file structure')
+    }
   }
 }
 
