@@ -102,14 +102,14 @@ public class JobSeekerController {
             log.info("File details: name={}, size={}, contentType={}", 
                     file.getOriginalFilename(), file.getSize(), file.getContentType());
 
-            // Upload document and create ProgramDocument record
-            com.wits.project.model.ProgramDocument document = documentService.uploadDocument(
+            // Upload document and create or update ProgramDocument record
+            com.wits.project.model.ProgramDocument document = documentService.uploadOrUpdateDocument(
                 file, 
                 currentUserId, 
                 com.wits.project.model.enums.Enums.ProgramType.RESUME, 
                 "Resume for " + file.getOriginalFilename()
             );
-            log.info("Resume document created with ID: {}", document.getId());
+            log.info("Resume document created/updated with ID: {}", document.getId());
             
             // Get or create the job seeker profile
             Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(currentUserId);

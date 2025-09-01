@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { providerAPI } from '../../api/apiService.js';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { providerAPI } from "../../api/apiService.js";
 import {
   Box,
   Card,
@@ -26,8 +26,8 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
-} from '@mui/material';
+  MenuItem,
+} from "@mui/material";
 import {
   Add as AddIcon,
   Edit as EditIcon,
@@ -36,16 +36,24 @@ import {
   CloudDone as PublishIcon,
   Assignment as AssignmentIcon,
   TrendingUp as TrendingUpIcon,
-  Schedule as ScheduleIcon
-} from '@mui/icons-material';
+  Schedule as ScheduleIcon,
+} from "@mui/icons-material";
 
 const ManageServices = () => {
   const navigate = useNavigate();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [deleteDialog, setDeleteDialog] = useState({ open: false, serviceId: null, serviceTitle: '' });
-  const [publishDialog, setPublishDialog] = useState({ open: false, serviceId: null, serviceTitle: '' });
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    serviceId: null,
+    serviceTitle: "",
+  });
+  const [publishDialog, setPublishDialog] = useState({
+    open: false,
+    serviceId: null,
+    serviceTitle: "",
+  });
 
   useEffect(() => {
     fetchServices();
@@ -56,8 +64,11 @@ const ManageServices = () => {
       const data = await providerAPI.getMyServices();
       setServices(data);
     } catch (error) {
-      console.error('Error fetching services:', error);
-      setMessage({ type: 'error', text: error.message || 'An error occurred while loading services.' });
+      console.error("Error fetching services:", error);
+      setMessage({
+        type: "error",
+        text: error.message || "An error occurred while loading services.",
+      });
     } finally {
       setLoading(false);
     }
@@ -66,50 +77,57 @@ const ManageServices = () => {
   const handleDelete = async () => {
     try {
       await providerAPI.deleteService(deleteDialog.serviceId);
-      setMessage({ type: 'success', text: 'Service deleted successfully!' });
+      setMessage({ type: "success", text: "Service deleted successfully!" });
       fetchServices(); // Refresh the list
     } catch (error) {
-      console.error('Error deleting service:', error);
-      setMessage({ type: 'error', text: error.message || 'An error occurred while deleting the service.' });
+      console.error("Error deleting service:", error);
+      setMessage({
+        type: "error",
+        text: error.message || "An error occurred while deleting the service.",
+      });
     } finally {
-      setDeleteDialog({ open: false, serviceId: null, serviceTitle: '' });
+      setDeleteDialog({ open: false, serviceId: null, serviceTitle: "" });
     }
   };
 
   const handlePublish = async () => {
     try {
       await providerAPI.publishService(publishDialog.serviceId);
-      setMessage({ type: 'success', text: 'Service published successfully!' });
+      setMessage({ type: "success", text: "Service published successfully!" });
       fetchServices(); // Refresh the list
     } catch (error) {
-      console.error('Error publishing service:', error);
-      setMessage({ type: 'error', text: error.message || 'An error occurred while publishing the service.' });
+      console.error("Error publishing service:", error);
+      setMessage({
+        type: "error",
+        text:
+          error.message || "An error occurred while publishing the service.",
+      });
     } finally {
-      setPublishDialog({ open: false, serviceId: null, serviceTitle: '' });
+      setPublishDialog({ open: false, serviceId: null, serviceTitle: "" });
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'ACTIVE':
-        return 'success';
-      case 'DRAFT':
-        return 'warning';
-      case 'INACTIVE':
-        return 'error';
+      case "ACTIVE":
+        return "success";
+      case "DRAFT":
+        return "warning";
+      case "INACTIVE":
+        return "error";
       default:
-        return 'default';
+        return "default";
     }
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString();
   };
 
   if (loading) {
     return (
-      <Box sx={{ width: '100%', mt: 2 }}>
+      <Box sx={{ width: "100%", mt: 2 }}>
         <LinearProgress />
       </Box>
     );
@@ -117,14 +135,21 @@ const ManageServices = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
+        }}
+      >
+        <Typography variant="h4" sx={{ fontWeight: "bold" }}>
           Manage Services
         </Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => navigate('/provider/services/new')}
+          onClick={() => navigate("/provider/services/new")}
         >
           Create New Service
         </Button>
@@ -138,17 +163,31 @@ const ManageServices = () => {
 
       <Card>
         <CardContent>
-          <TableContainer component={Paper} sx={{ boxShadow: 'none' }}>
+          <TableContainer component={Paper} sx={{ boxShadow: "none" }}>
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell><strong>Title</strong></TableCell>
-                  <TableCell><strong>Category</strong></TableCell>
-                  <TableCell><strong>Mode</strong></TableCell>
-                  <TableCell><strong>Status</strong></TableCell>
-                  <TableCell><strong>Applications</strong></TableCell>
-                  <TableCell><strong>Created</strong></TableCell>
-                  <TableCell><strong>Actions</strong></TableCell>
+                  <TableCell>
+                    <strong>Title</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Category</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Mode</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Status</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Applications</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Created</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Actions</strong>
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -156,12 +195,13 @@ const ManageServices = () => {
                   <TableRow>
                     <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
-                        No services found. Create your first service to get started!
+                        No services found. Create your first service to get
+                        started!
                       </Typography>
                       <Button
                         variant="outlined"
                         startIcon={<AddIcon />}
-                        onClick={() => navigate('/provider/services/new')}
+                        onClick={() => navigate("/provider/services/new")}
                         sx={{ mt: 2 }}
                       >
                         Create Service
@@ -173,7 +213,10 @@ const ManageServices = () => {
                     <TableRow key={service.id} hover>
                       <TableCell>
                         <Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontWeight: "bold" }}
+                          >
                             {service.title}
                           </Typography>
                           {service.tags && service.tags.length > 0 && (
@@ -201,11 +244,13 @@ const ManageServices = () => {
                         <Chip label={service.category} size="small" />
                       </TableCell>
                       <TableCell>
-                        <Chip 
-                          label={service.mode} 
-                          size="small" 
+                        <Chip
+                          label={service.mode}
+                          size="small"
                           variant="outlined"
-                          color={service.mode === 'Online' ? 'primary' : 'secondary'}
+                          color={
+                            service.mode === "Online" ? "primary" : "secondary"
+                          }
                         />
                       </TableCell>
                       <TableCell>
@@ -216,7 +261,13 @@ const ManageServices = () => {
                         />
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 0.5,
+                          }}
+                        >
                           <Typography variant="body2">
                             Total: {service.totalApplications || 0}
                           </Typography>
@@ -231,29 +282,35 @@ const ManageServices = () => {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Box sx={{ display: "flex", gap: 1 }}>
                           <IconButton
                             size="small"
-                            onClick={() => navigate(`/provider/services/${service.id}`)}
+                            onClick={() =>
+                              navigate(`/provider/services/${service.id}`)
+                            }
                             title="View Details"
                           >
                             <ViewIcon />
                           </IconButton>
                           <IconButton
                             size="small"
-                            onClick={() => navigate(`/provider/services/${service.id}/edit`)}
+                            onClick={() =>
+                              navigate(`/provider/services/${service.id}/edit`)
+                            }
                             title="Edit Service"
                           >
                             <EditIcon />
                           </IconButton>
-                          {service.status === 'DRAFT' && (
+                          {service.status === "DRAFT" && (
                             <IconButton
                               size="small"
-                              onClick={() => setPublishDialog({
-                                open: true,
-                                serviceId: service.id,
-                                serviceTitle: service.title
-                              })}
+                              onClick={() =>
+                                setPublishDialog({
+                                  open: true,
+                                  serviceId: service.id,
+                                  serviceTitle: service.title,
+                                })
+                              }
                               title="Publish Service"
                               color="success"
                             >
@@ -262,11 +319,13 @@ const ManageServices = () => {
                           )}
                           <IconButton
                             size="small"
-                            onClick={() => setDeleteDialog({
-                              open: true,
-                              serviceId: service.id,
-                              serviceTitle: service.title
-                            })}
+                            onClick={() =>
+                              setDeleteDialog({
+                                open: true,
+                                serviceId: service.id,
+                                serviceTitle: service.title,
+                              })
+                            }
                             title="Delete Service"
                             color="error"
                           >
@@ -284,15 +343,29 @@ const ManageServices = () => {
       </Card>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, serviceId: null, serviceTitle: '' })}>
+      <Dialog
+        open={deleteDialog.open}
+        onClose={() =>
+          setDeleteDialog({ open: false, serviceId: null, serviceTitle: "" })
+        }
+      >
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete "{deleteDialog.serviceTitle}"? This action cannot be undone.
+            Are you sure you want to delete "{deleteDialog.serviceTitle}"? This
+            action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialog({ open: false, serviceId: null, serviceTitle: '' })}>
+          <Button
+            onClick={() =>
+              setDeleteDialog({
+                open: false,
+                serviceId: null,
+                serviceTitle: "",
+              })
+            }
+          >
             Cancel
           </Button>
           <Button onClick={handleDelete} color="error" variant="contained">
@@ -302,15 +375,29 @@ const ManageServices = () => {
       </Dialog>
 
       {/* Publish Confirmation Dialog */}
-      <Dialog open={publishDialog.open} onClose={() => setPublishDialog({ open: false, serviceId: null, serviceTitle: '' })}>
+      <Dialog
+        open={publishDialog.open}
+        onClose={() =>
+          setPublishDialog({ open: false, serviceId: null, serviceTitle: "" })
+        }
+      >
         <DialogTitle>Confirm Publish</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to publish "{publishDialog.serviceTitle}"? This will make it visible to applicants.
+            Are you sure you want to publish "{publishDialog.serviceTitle}"?
+            This will make it visible to applicants.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPublishDialog({ open: false, serviceId: null, serviceTitle: '' })}>
+          <Button
+            onClick={() =>
+              setPublishDialog({
+                open: false,
+                serviceId: null,
+                serviceTitle: "",
+              })
+            }
+          >
             Cancel
           </Button>
           <Button onClick={handlePublish} color="success" variant="contained">

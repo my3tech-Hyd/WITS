@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Card,
@@ -17,8 +17,8 @@ import {
   Avatar,
   Divider,
   IconButton,
-  Tooltip
-} from '@mui/material';
+  Tooltip,
+} from "@mui/material";
 import {
   School as SchoolIcon,
   LocationOn as LocationIcon,
@@ -29,22 +29,22 @@ import {
   Phone as PhoneIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
-  Info as InfoIcon
-} from '@mui/icons-material';
-import { jobSeekerServicesAPI } from '../../api/apiService';
+  Info as InfoIcon,
+} from "@mui/icons-material";
+import { jobSeekerServicesAPI } from "../../api/apiService";
 
 const Services = () => {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const [message, setMessage] = useState({ type: "", text: "" });
   const [applicationDialog, setApplicationDialog] = useState({
     open: false,
     service: null,
-    action: ''
+    action: "",
   });
   const [applicationData, setApplicationData] = useState({
-    coverLetter: '',
-    additionalNotes: ''
+    coverLetter: "",
+    additionalNotes: "",
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -58,8 +58,11 @@ const Services = () => {
       const data = await jobSeekerServicesAPI.getAllServices();
       setServices(data);
     } catch (error) {
-      console.error('Error fetching services:', error);
-      setMessage({ type: 'error', text: error.message || 'Failed to load services.' });
+      console.error("Error fetching services:", error);
+      setMessage({
+        type: "error",
+        text: error.message || "Failed to load services.",
+      });
     } finally {
       setLoading(false);
     }
@@ -69,11 +72,11 @@ const Services = () => {
     setApplicationDialog({
       open: true,
       service,
-      action
+      action,
     });
     setApplicationData({
-      coverLetter: '',
-      additionalNotes: ''
+      coverLetter: "",
+      additionalNotes: "",
     });
   };
 
@@ -83,9 +86,9 @@ const Services = () => {
     setSubmitting(true);
     try {
       const requestData = {
-        status: applicationDialog.action === 'join' ? 'JOIN' : 'NOT_INTERESTED',
+        status: applicationDialog.action === "join" ? "JOIN" : "NOT_INTERESTED",
         coverLetter: applicationData.coverLetter,
-        additionalNotes: applicationData.additionalNotes
+        additionalNotes: applicationData.additionalNotes,
       };
 
       if (applicationDialog.service.hasApplied) {
@@ -101,15 +104,22 @@ const Services = () => {
       }
 
       setMessage({
-        type: 'success',
-        text: `Successfully ${applicationDialog.action === 'join' ? 'applied for' : 'marked as not interested in'} the service!`
+        type: "success",
+        text: `Successfully ${
+          applicationDialog.action === "join"
+            ? "applied for"
+            : "marked as not interested in"
+        } the service!`,
       });
 
-      setApplicationDialog({ open: false, service: null, action: '' });
+      setApplicationDialog({ open: false, service: null, action: "" });
       fetchServices(); // Refresh the list
     } catch (error) {
-      console.error('Error submitting application:', error);
-      setMessage({ type: 'error', text: error.message || 'Failed to submit application.' });
+      console.error("Error submitting application:", error);
+      setMessage({
+        type: "error",
+        text: error.message || "Failed to submit application.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -121,17 +131,17 @@ const Services = () => {
     }
 
     const status = service.myApplicationStatus;
-    if (status === 'JOIN') {
+    if (status === "JOIN") {
       return <Chip label="Applied" color="success" size="small" />;
-    } else if (status === 'NOT_INTERESTED') {
+    } else if (status === "NOT_INTERESTED") {
       return <Chip label="Not Interested" color="default" size="small" />;
-    } else if (status === 'ACCEPTED') {
+    } else if (status === "ACCEPTED") {
       return <Chip label="Accepted" color="success" size="small" />;
-    } else if (status === 'REJECTED') {
+    } else if (status === "REJECTED") {
       return <Chip label="Rejected" color="error" size="small" />;
-    } else if (status === 'WITHDRAWN') {
+    } else if (status === "WITHDRAWN") {
       return <Chip label="Withdrawn" color="default" size="small" />;
-    } else if (status === 'PENDING') {
+    } else if (status === "PENDING") {
       return <Chip label="Pending Review" color="warning" size="small" />;
     }
     return <Chip label={status} color="primary" size="small" />;
@@ -140,30 +150,35 @@ const Services = () => {
   const getActionButtons = (service) => {
     if (service.hasApplied) {
       const status = service.myApplicationStatus;
-      
+
       // Hide buttons for accepted, rejected, withdrawn, and pending statuses
-      if (status === 'ACCEPTED' || status === 'REJECTED' || status === 'WITHDRAWN' || status === 'PENDING') {
+      if (
+        status === "ACCEPTED" ||
+        status === "REJECTED" ||
+        status === "WITHDRAWN" ||
+        status === "PENDING"
+      ) {
         return null; // No buttons shown for these statuses
       }
-      
-      if (status === 'JOIN') {
+
+      if (status === "JOIN") {
         return (
           <Button
             variant="outlined"
             color="default"
-            onClick={() => handleActionClick(service, 'not_interested')}
+            onClick={() => handleActionClick(service, "not_interested")}
             startIcon={<CancelIcon />}
             fullWidth
           >
             Mark as Not Interested
           </Button>
         );
-      } else if (status === 'NOT_INTERESTED') {
+      } else if (status === "NOT_INTERESTED") {
         return (
           <Button
             variant="contained"
             color="primary"
-            onClick={() => handleActionClick(service, 'join')}
+            onClick={() => handleActionClick(service, "join")}
             startIcon={<CheckCircleIcon />}
             fullWidth
           >
@@ -174,11 +189,11 @@ const Services = () => {
     }
 
     return (
-      <Box sx={{ display: 'flex', gap: 1 }}>
+      <Box sx={{ display: "flex", gap: 1 }}>
         <Button
           variant="contained"
           color="primary"
-          onClick={() => handleActionClick(service, 'join')}
+          onClick={() => handleActionClick(service, "join")}
           startIcon={<CheckCircleIcon />}
           sx={{ flex: 1 }}
         >
@@ -187,7 +202,7 @@ const Services = () => {
         <Button
           variant="outlined"
           color="default"
-          onClick={() => handleActionClick(service, 'not_interested')}
+          onClick={() => handleActionClick(service, "not_interested")}
           startIcon={<CancelIcon />}
           sx={{ flex: 1 }}
         >
@@ -199,7 +214,14 @@ const Services = () => {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: "400px",
+        }}
+      >
         <CircularProgress />
       </Box>
     );
@@ -211,11 +233,16 @@ const Services = () => {
         Available Services & Courses
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Discover training programs, courses, and services offered by our providers
+        Discover training programs, courses, and services offered by our
+        providers
       </Typography>
 
       {message.text && (
-        <Alert severity={message.type} sx={{ mb: 3 }} onClose={() => setMessage({ type: '', text: '' })}>
+        <Alert
+          severity={message.type}
+          sx={{ mb: 3 }}
+          onClose={() => setMessage({ type: "", text: "" })}
+        >
           {message.text}
         </Alert>
       )}
@@ -223,53 +250,77 @@ const Services = () => {
       <Grid container spacing={3}>
         {services.map((service) => (
           <Grid item xs={12} md={6} lg={4} key={service.id}>
-            <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Card
+              sx={{ height: "100%", display: "flex", flexDirection: "column" }}
+            >
               {service.bannerUrl && (
                 <Box
                   sx={{
                     height: 200,
                     backgroundImage: `url(${service.bannerUrl})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
                     borderBottom: 1,
-                    borderColor: 'divider'
+                    borderColor: "divider",
                   }}
                 />
               )}
-              <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+              <CardContent
+                sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    mb: 1,
+                  }}
+                >
                   <Typography variant="h6" component="h2" sx={{ flex: 1 }}>
                     {service.title}
                   </Typography>
                   {getStatusChip(service)}
                 </Box>
 
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mb: 2 }}
+                >
                   {service.description}
                 </Typography>
 
                 <Box sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <SchoolIcon sx={{ fontSize: 16, mr: 1, color: 'text.secondary' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <SchoolIcon
+                      sx={{ fontSize: 16, mr: 1, color: "text.secondary" }}
+                    />
                     <Typography variant="body2" color="text.secondary">
                       {service.providerName}
                     </Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <LocationIcon sx={{ fontSize: 16, mr: 1, color: 'text.secondary' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <LocationIcon
+                      sx={{ fontSize: 16, mr: 1, color: "text.secondary" }}
+                    />
                     <Typography variant="body2" color="text.secondary">
-                      {service.mode} {service.location && `• ${service.location}`}
+                      {service.mode}{" "}
+                      {service.location && `• ${service.location}`}
                     </Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <TimeIcon sx={{ fontSize: 16, mr: 1, color: 'text.secondary' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                    <TimeIcon
+                      sx={{ fontSize: 16, mr: 1, color: "text.secondary" }}
+                    />
                     <Typography variant="body2" color="text.secondary">
                       {service.duration}
                     </Typography>
                   </Box>
                   {service.fees && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <MoneyIcon sx={{ fontSize: 16, mr: 1, color: 'text.secondary' }} />
+                    <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                      <MoneyIcon
+                        sx={{ fontSize: 16, mr: 1, color: "text.secondary" }}
+                      />
                       <Typography variant="body2" color="text.secondary">
                         ${service.fees}
                       </Typography>
@@ -290,9 +341,7 @@ const Services = () => {
                   </Box>
                 )}
 
-                <Box sx={{ mt: 'auto' }}>
-                  {getActionButtons(service)}
-                </Box>
+                <Box sx={{ mt: "auto" }}>{getActionButtons(service)}</Box>
               </CardContent>
             </Card>
           </Grid>
@@ -300,7 +349,7 @@ const Services = () => {
       </Grid>
 
       {services.length === 0 && !loading && (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
+        <Box sx={{ textAlign: "center", py: 4 }}>
           <Typography variant="h6" color="text.secondary">
             No services available at the moment
           </Typography>
@@ -313,24 +362,30 @@ const Services = () => {
       {/* Application Dialog */}
       <Dialog
         open={applicationDialog.open}
-        onClose={() => setApplicationDialog({ open: false, service: null, action: '' })}
+        onClose={() =>
+          setApplicationDialog({ open: false, service: null, action: "" })
+        }
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>
-          {applicationDialog.action === 'join' ? 'Apply for Service' : 'Mark as Not Interested'}
+          {applicationDialog.action === "join"
+            ? "Apply for Service"
+            : "Mark as Not Interested"}
         </DialogTitle>
         <DialogContent>
           {applicationDialog.service && (
             <Box sx={{ mb: 2 }}>
-              <Typography variant="h6">{applicationDialog.service.title}</Typography>
+              <Typography variant="h6">
+                {applicationDialog.service.title}
+              </Typography>
               <Typography variant="body2" color="text.secondary">
                 {applicationDialog.service.providerName}
               </Typography>
             </Box>
           )}
 
-          {applicationDialog.action === 'join' && (
+          {applicationDialog.action === "join" && (
             <>
               <TextField
                 fullWidth
@@ -338,7 +393,12 @@ const Services = () => {
                 rows={4}
                 label="Cover Letter (Optional)"
                 value={applicationData.coverLetter}
-                onChange={(e) => setApplicationData({ ...applicationData, coverLetter: e.target.value })}
+                onChange={(e) =>
+                  setApplicationData({
+                    ...applicationData,
+                    coverLetter: e.target.value,
+                  })
+                }
                 sx={{ mb: 2 }}
               />
               <TextField
@@ -347,25 +407,37 @@ const Services = () => {
                 rows={3}
                 label="Additional Notes (Optional)"
                 value={applicationData.additionalNotes}
-                onChange={(e) => setApplicationData({ ...applicationData, additionalNotes: e.target.value })}
+                onChange={(e) =>
+                  setApplicationData({
+                    ...applicationData,
+                    additionalNotes: e.target.value,
+                  })
+                }
               />
             </>
           )}
 
-          {applicationDialog.action === 'not_interested' && (
+          {applicationDialog.action === "not_interested" && (
             <TextField
               fullWidth
               multiline
               rows={3}
               label="Reason (Optional)"
               value={applicationData.additionalNotes}
-              onChange={(e) => setApplicationData({ ...applicationData, additionalNotes: e.target.value })}
+              onChange={(e) =>
+                setApplicationData({
+                  ...applicationData,
+                  additionalNotes: e.target.value,
+                })
+              }
             />
           )}
         </DialogContent>
         <DialogActions>
           <Button
-            onClick={() => setApplicationDialog({ open: false, service: null, action: '' })}
+            onClick={() =>
+              setApplicationDialog({ open: false, service: null, action: "" })
+            }
             disabled={submitting}
           >
             Cancel
@@ -375,7 +447,7 @@ const Services = () => {
             variant="contained"
             disabled={submitting}
           >
-            {submitting ? <CircularProgress size={20} /> : 'Submit'}
+            {submitting ? <CircularProgress size={20} /> : "Submit"}
           </Button>
         </DialogActions>
       </Dialog>

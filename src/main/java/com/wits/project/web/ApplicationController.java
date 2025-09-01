@@ -131,7 +131,7 @@ public class ApplicationController {
         a.setStatus(req.status);
         
         // If status is REJECTED, set the rejection reason
-        if (req.status == ApplicationStatus.REJECTED) {
+        if (req.status == JobApplicationStatus.REJECTED) {
             if (req.rejectReason == null || req.rejectReason.trim().isEmpty()) {
                 throw new IllegalArgumentException("Rejection reason is required when status is REJECTED");
             }
@@ -199,7 +199,7 @@ public class ApplicationController {
     @Setter
     public static class UpdateStatus {
         public String applicationId;
-        public ApplicationStatus status;
+        public JobApplicationStatus status;
         public String rejectReason; // Added rejectReason field
     }
 

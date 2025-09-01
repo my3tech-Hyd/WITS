@@ -10,7 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.wits.project.web.dto.PostingToResumeDTO;
 import com.wits.project.web.dto.ResumeToPostingDTO;
 
-@FeignClient(url = "http://localhost:8000")
+@FeignClient(name= "aiModel", url = "http://localhost:8000")
 public interface ModelFeign {
 
     @PostMapping(value = "/api/ptr", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

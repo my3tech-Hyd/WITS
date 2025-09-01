@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { providerAPI } from '../../api/apiService.js';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { providerAPI } from "../../api/apiService.js";
 import {
   Box,
   Card,
@@ -29,8 +29,8 @@ import {
   MenuItem,
   Avatar,
   Grid,
-  Divider
-} from '@mui/material';
+  Divider,
+} from "@mui/material";
 import {
   Visibility as ViewIcon,
   Email as EmailIcon,
@@ -40,19 +40,19 @@ import {
   Assignment as AssignmentIcon,
   CheckCircle as AcceptIcon,
   Cancel as RejectIcon,
-  Message as MessageIcon
-} from '@mui/icons-material';
+  Message as MessageIcon,
+} from "@mui/icons-material";
 
 const Applications = () => {
   const navigate = useNavigate();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [statusDialog, setStatusDialog] = useState({ 
-    open: false, 
-    application: null, 
-    status: '', 
-    notes: '' 
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [statusDialog, setStatusDialog] = useState({
+    open: false,
+    application: null,
+    status: "",
+    notes: "",
   });
 
   useEffect(() => {
@@ -64,8 +64,11 @@ const Applications = () => {
       const data = await providerAPI.getServiceApplications();
       setApplications(data);
     } catch (error) {
-      console.error('Error fetching applications:', error);
-      setMessage({ type: 'error', text: error.message || 'An error occurred while loading applications.' });
+      console.error("Error fetching applications:", error);
+      setMessage({
+        type: "error",
+        text: error.message || "An error occurred while loading applications.",
+      });
     } finally {
       setLoading(false);
     }
@@ -77,55 +80,69 @@ const Applications = () => {
         status: statusDialog.status,
         statusNotes: statusDialog.notes,
         isContacted: true,
-        contactMethod: 'Email',
-        contactNotes: `Status updated to ${statusDialog.status}`
+        contactMethod: "Email",
+        contactNotes: `Status updated to ${statusDialog.status}`,
       };
-      
-      await providerAPI.updateApplicationStatus(statusDialog.application.id, statusData);
-      setMessage({ type: 'success', text: 'Application status updated successfully!' });
+
+      await providerAPI.updateApplicationStatus(
+        statusDialog.application.id,
+        statusData
+      );
+      setMessage({
+        type: "success",
+        text: "Application status updated successfully!",
+      });
       fetchApplications(); // Refresh the list
     } catch (error) {
-      console.error('Error updating application status:', error);
-      setMessage({ type: 'error', text: error.message || 'An error occurred while updating the status.' });
+      console.error("Error updating application status:", error);
+      setMessage({
+        type: "error",
+        text: error.message || "An error occurred while updating the status.",
+      });
     } finally {
-      setStatusDialog({ open: false, application: null, status: '', notes: '' });
+      setStatusDialog({
+        open: false,
+        application: null,
+        status: "",
+        notes: "",
+      });
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'ACCEPTED':
-        return 'success';
-      case 'REJECTED':
-        return 'error';
-      case 'PENDING':
-        return 'warning';
-      case 'WITHDRAWN':
-        return 'default';
+      case "ACCEPTED":
+        return "success";
+      case "REJECTED":
+        return "error";
+      case "PENDING":
+        return "warning";
+      case "WITHDRAWN":
+        return "default";
       default:
-        return 'default';
+        return "default";
     }
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString();
   };
 
   const handleSendMessage = (application) => {
-    navigate('/provider/messages', { 
-      state: { 
+    navigate("/provider/messages", {
+      state: {
         recipientId: application.applicantId,
         recipientName: application.applicantName,
         serviceId: application.serviceId,
-        applicationId: application.id
-      }
+        applicationId: application.id,
+      },
     });
   };
 
   if (loading) {
     return (
-      <Box sx={{ width: '100%', mt: 2 }}>
+      <Box sx={{ width: "100%", mt: 2 }}>
         <LinearProgress />
       </Box>
     );
@@ -133,7 +150,7 @@ const Applications = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom sx={{ mb: 4, fontWeight: 'bold' }}>
+      <Typography variant="h4" gutterBottom sx={{ mb: 4, fontWeight: "bold" }}>
         Service Applications
       </Typography>
 
@@ -145,16 +162,28 @@ const Applications = () => {
 
       <Card>
         <CardContent>
-          <TableContainer component={Paper} sx={{ boxShadow: 'none' }}>
+          <TableContainer component={Paper} sx={{ boxShadow: "none" }}>
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell><strong>Applicant</strong></TableCell>
-                  <TableCell><strong>Service</strong></TableCell>
-                  <TableCell><strong>Applied Date</strong></TableCell>
-                  <TableCell><strong>Status</strong></TableCell>
-                  <TableCell><strong>Contact Info</strong></TableCell>
-                  <TableCell><strong>Actions</strong></TableCell>
+                  <TableCell>
+                    <strong>Applicant</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Service</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Applied Date</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Status</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Contact Info</strong>
+                  </TableCell>
+                  <TableCell>
+                    <strong>Actions</strong>
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -162,7 +191,8 @@ const Applications = () => {
                   <TableRow>
                     <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
-                        No applications received yet. Applications will appear here once applicants apply to your services.
+                        No applications received yet. Applications will appear
+                        here once applicants apply to your services.
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -170,15 +200,23 @@ const Applications = () => {
                   applications.map((application) => (
                     <TableRow key={application.id} hover>
                       <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 2 }}
+                        >
                           <Avatar>
                             <PersonIcon />
                           </Avatar>
                           <Box>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                            <Typography
+                              variant="subtitle2"
+                              sx={{ fontWeight: "bold" }}
+                            >
                               {application.applicantName}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
                               {application.applicantType}
                             </Typography>
                           </Box>
@@ -186,7 +224,10 @@ const Applications = () => {
                       </TableCell>
                       <TableCell>
                         <Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontWeight: "bold" }}
+                          >
                             {application.serviceTitle}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
@@ -207,27 +248,49 @@ const Applications = () => {
                         />
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                          <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                            }}
+                          >
                             <EmailIcon fontSize="small" />
                             {application.applicantEmail}
                           </Typography>
-                          <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                            }}
+                          >
                             <PhoneIcon fontSize="small" />
                             {application.applicantPhone}
                           </Typography>
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Box sx={{ display: "flex", gap: 1 }}>
                           <IconButton
                             size="small"
-                            onClick={() => setStatusDialog({
-                              open: true,
-                              application: application,
-                              status: application.status,
-                              notes: application.statusNotes || ''
-                            })}
+                            onClick={() =>
+                              setStatusDialog({
+                                open: true,
+                                application: application,
+                                status: application.status,
+                                notes: application.statusNotes || "",
+                              })
+                            }
                             title="Update Status"
                           >
                             <AssignmentIcon />
@@ -240,16 +303,18 @@ const Applications = () => {
                           >
                             <MessageIcon />
                           </IconButton>
-                          {application.status === 'PENDING' && (
+                          {application.status === "PENDING" && (
                             <>
                               <IconButton
                                 size="small"
-                                onClick={() => setStatusDialog({
-                                  open: true,
-                                  application: application,
-                                  status: 'ACCEPTED',
-                                  notes: ''
-                                })}
+                                onClick={() =>
+                                  setStatusDialog({
+                                    open: true,
+                                    application: application,
+                                    status: "ACCEPTED",
+                                    notes: "",
+                                  })
+                                }
                                 title="Accept Application"
                                 color="success"
                               >
@@ -257,12 +322,14 @@ const Applications = () => {
                               </IconButton>
                               <IconButton
                                 size="small"
-                                onClick={() => setStatusDialog({
-                                  open: true,
-                                  application: application,
-                                  status: 'REJECTED',
-                                  notes: ''
-                                })}
+                                onClick={() =>
+                                  setStatusDialog({
+                                    open: true,
+                                    application: application,
+                                    status: "REJECTED",
+                                    notes: "",
+                                  })
+                                }
                                 title="Reject Application"
                                 color="error"
                               >
@@ -282,9 +349,16 @@ const Applications = () => {
       </Card>
 
       {/* Status Update Dialog */}
-      <Dialog 
-        open={statusDialog.open} 
-        onClose={() => setStatusDialog({ open: false, application: null, status: '', notes: '' })}
+      <Dialog
+        open={statusDialog.open}
+        onClose={() =>
+          setStatusDialog({
+            open: false,
+            application: null,
+            status: "",
+            notes: "",
+          })
+        }
         maxWidth="sm"
         fullWidth
       >
@@ -292,7 +366,8 @@ const Applications = () => {
           Update Application Status
           {statusDialog.application && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {statusDialog.application.applicantName} - {statusDialog.application.serviceTitle}
+              {statusDialog.application.applicantName} -{" "}
+              {statusDialog.application.serviceTitle}
             </Typography>
           )}
         </DialogTitle>
@@ -304,7 +379,12 @@ const Applications = () => {
                 <Select
                   value={statusDialog.status}
                   label="Status"
-                  onChange={(e) => setStatusDialog(prev => ({ ...prev, status: e.target.value }))}
+                  onChange={(e) =>
+                    setStatusDialog((prev) => ({
+                      ...prev,
+                      status: e.target.value,
+                    }))
+                  }
                 >
                   <MenuItem value="PENDING">Pending</MenuItem>
                   <MenuItem value="ACCEPTED">Accepted</MenuItem>
@@ -320,18 +400,32 @@ const Applications = () => {
                 multiline
                 rows={3}
                 value={statusDialog.notes}
-                onChange={(e) => setStatusDialog(prev => ({ ...prev, notes: e.target.value }))}
+                onChange={(e) =>
+                  setStatusDialog((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
                 placeholder="Add any notes about this status update..."
               />
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setStatusDialog({ open: false, application: null, status: '', notes: '' })}>
+          <Button
+            onClick={() =>
+              setStatusDialog({
+                open: false,
+                application: null,
+                status: "",
+                notes: "",
+              })
+            }
+          >
             Cancel
           </Button>
-          <Button 
-            onClick={handleStatusUpdate} 
+          <Button
+            onClick={handleStatusUpdate}
             variant="contained"
             disabled={!statusDialog.status}
           >

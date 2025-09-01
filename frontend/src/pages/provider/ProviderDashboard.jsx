@@ -144,7 +144,7 @@ function DashboardHome({ setSelectedTab }) {
       </Typography>
 
       {/* Profile Completion */}
-      <Card sx={{ mb: 4, p: 3 }}>
+      {/* <Card sx={{ mb: 4, p: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
             <Business />
@@ -170,7 +170,7 @@ function DashboardHome({ setSelectedTab }) {
         >
           Complete Profile
         </Button>
-      </Card>
+      </Card> */}
 
       {/* Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
