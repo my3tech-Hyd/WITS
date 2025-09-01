@@ -40,7 +40,8 @@ import {
   Select,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  LinearProgress
 } from '@mui/material'
 import {
   Dashboard,
@@ -66,10 +67,13 @@ import {
   MoreVert,
   Block,
   Schedule,
-  Event
+  Event,
+  Assignment,
+  Star,
+  Description
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { jobAPI, applicationAPI, roleUtils, userAPI } from '../../api/apiService.js'
+import { jobAPI, applicationAPI, roleUtils, userAPI, employerAPI } from '../../api/apiService.js'
 import { 
   DashboardCard, 
   StatsCard, 
@@ -154,8 +158,7 @@ function DashboardHome() {
                 color: 'white', 
                 cursor: 'pointer' 
               }}
-            onClick={() => setSelectedTab('job-postings')}
-          >
+            >
               <Stack direction="row" alignItems="center" spacing={2}>
                 <Work sx={{ fontSize: 40 }} />
                 <Box>
@@ -383,6 +386,12 @@ function MyJobPostings() {
   const [applicationStatuses, setApplicationStatuses] = useState([])
   const [interviewModal, setInterviewModal] = useState({ open: false, application: null, interviewData: null })
   const [interviewLoading, setInterviewLoading] = useState(false)
+  const [documentContent, setDocumentContent] = useState({
+    resume: null,
+    coverLetter: null,
+    loading: false,
+    error: null
+  })
 
   useEffect(() => {
       const loadJobs = async () => {
@@ -414,8 +423,8 @@ function MyJobPostings() {
           'REJECTED',
           'WITHDRAWN'
         ])
-      }
     }
+  }
 
     loadJobs()
     loadApplicationStatuses()
@@ -508,17 +517,91 @@ function MyJobPostings() {
 
   const handleViewApplicants = async (job) => {
     try {
+      console.log('🔍 Loading applicants for job:', job.title)
       setApplicantsLoading(true)
       setApplicantsModal({ open: true, job, applicants: [] })
       
       // Load applicants for this job
       const applicants = await applicationAPI.getJobApplicationsWithUserDetails(job.id)
-      setApplicantsModal({ open: true, job, applicants: applicants || [] })
+      console.log('🔍 Raw applicants data:', applicants)
+      
+      // Load complete JobSeeker details for each applicant
+      const applicantsWithFullDetails = []
+      for (const applicant of (applicants || [])) {
+        try {
+          const userId = applicant.application?.userId || applicant.user?.id
+          if (userId) {
+            console.log(`🔍 Loading JobSeeker details for user: ${userId}`)
+            const userProfile = await userAPI.getUserProfileById(userId)
+            console.log(`🔍 JobSeeker profile for user ${userId}:`, userProfile)
+            
+            applicantsWithFullDetails.push({
+              ...applicant,
+              jobSeekerProfile: userProfile?.jobSeeker,
+              resumeDocumentId: userProfile?.resumeDocumentId,
+              coverLetterDocumentId: userProfile?.coverLetterDocumentId,
+              userProfile: userProfile
+            })
+          } else {
+            console.warn('⚠️ No user ID found for applicant:', applicant)
+            applicantsWithFullDetails.push(applicant)
+          }
+        } catch (error) {
+          console.error(`❌ Failed to load JobSeeker details for applicant:`, error)
+          applicantsWithFullDetails.push(applicant)
+        }
+      }
+      
+      console.log('🔍 Applicants with full details:', applicantsWithFullDetails)
+      setApplicantsModal({ open: true, job, applicants: applicantsWithFullDetails })
     } catch (error) {
-      console.error('Failed to load applicants:', error)
+      console.error('❌ Failed to load applicants:', error)
       setApplicantsModal({ open: true, job, applicants: [] })
     } finally {
       setApplicantsLoading(false)
+    }
+  }
+
+  const handleViewApplicantDetails = async (application) => {
+    try {
+      console.log('🔍 Loading full applicant details for:', application)
+      
+      // Get the user ID from the application
+      const userId = application.application?.userId || application.user?.id
+      console.log('🔍 User ID:', userId)
+      
+      if (!userId) {
+        console.error('❌ No user ID found in application:', application)
+        alert('No user ID found for this applicant')
+        return
+      }
+
+      // Fetch complete applicant profile from JobSeeker table
+      const userProfile = await userAPI.getUserProfileById(userId)
+      console.log('✅ Complete applicant profile loaded:', userProfile)
+      console.log('🔍 JobSeeker data:', userProfile?.jobSeeker)
+      console.log('🔍 Resume document ID:', userProfile?.jobSeeker?.resumeDocumentId)
+      console.log('🔍 Cover letter document ID:', userProfile?.jobSeeker?.coverLetterDocumentId)
+
+      // Open the applicant details modal with complete data
+      setApplicantsModal(prev => ({
+        ...prev,
+        selectedApplicant: {
+          ...application,
+          profile: userProfile,
+          jobSeekerProfile: userProfile?.jobSeeker
+        }
+      }))
+      
+      console.log('✅ Applicant details modal opened with profile data')
+    } catch (error) {
+      console.error('❌ Failed to load applicant details:', error)
+      console.error('❌ Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      })
+      alert('Failed to load applicant details: ' + error.message)
     }
   }
 
@@ -654,6 +737,14 @@ function MyJobPostings() {
   const handleJobAction = async (job, action) => {
     try {
       switch (action) {
+        case 'activate':
+          await jobAPI.updateJobStatus(job.id, 'ACTIVE')
+          // Update job status in local state
+          setJobs(prev => prev.map(j => 
+            j.id === job.id ? { ...j, status: 'ACTIVE' } : j
+          ))
+          setSuccessMessage('Job activated successfully!')
+          break
         case 'deactivate':
           await jobAPI.updateJobStatus(job.id, 'INACTIVE')
           // Update job status in local state
@@ -934,75 +1025,158 @@ function MyJobPostings() {
       <Dialog
         open={viewJobModal.open}
         onClose={() => setViewJobModal({ open: false, job: null })}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Job Details
-          </Typography>
+        <DialogTitle sx={{ pb: 2, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              Job Details
+            </Typography>
+            <Chip 
+              label={viewJobModal.job?.status} 
+              color={getStatusColor(viewJobModal.job?.status)}
+              size="medium"
+              sx={{ fontWeight: 600, px: 2 }}
+            />
+          </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 3 }}>
           {viewJobModal.job && (
-            <Box sx={{ pt: 1 }}>
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
-                    {viewJobModal.job.title}
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                    {viewJobModal.job.companyName || viewJobModal.job.company} • {viewJobModal.job.location}
-                  </Typography>
-                  <Chip 
-                    label={viewJobModal.job.status} 
-                    color={getStatusColor(viewJobModal.job.status)}
-                    size="small"
-                    sx={{ mb: 2 }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Job Type</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {viewJobModal.job.jobType?.replace('_', ' ') || 'N/A'}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Posted Date</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {formatDate(viewJobModal.job.postedDate)}
-                  </Typography>
-                </Grid>
-                {viewJobModal.job.minSalary && viewJobModal.job.maxSalary && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">Salary Range</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                      ${viewJobModal.job.minSalary.toLocaleString()} - ${viewJobModal.job.maxSalary.toLocaleString()}
-                  </Typography>
-                </Grid>
-                )}
-                <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Description</Typography>
-                  <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
-                    {viewJobModal.job.description}
-                  </Typography>
-                </Grid>
-                {viewJobModal.job.requiredSkills && viewJobModal.job.requiredSkills.length > 0 && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                      Required Skills
+            <Box>
+              {/* Header Section */}
+              <Box sx={{ mb: 4, p: 3, bgcolor: 'grey.50', borderRadius: 3 }}>
+                <Typography variant="h4" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>
+                  {viewJobModal.job.title}
+                </Typography>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
+                  {viewJobModal.job.companyName || viewJobModal.job.company}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LocationOn sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {viewJobModal.job.location}
                     </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {viewJobModal.job.requiredSkills.map((skill, index) => (
-                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
-                      ))}
-    </Box>
-                  </Grid>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Work sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {viewJobModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                    </Typography>
+                  </Box>
+                </Box>
+                {viewJobModal.job.minSalary && viewJobModal.job.maxSalary && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TrendingUp sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 600, color: 'success.main' }}>
+                      ${viewJobModal.job.minSalary.toLocaleString()} - ${viewJobModal.job.maxSalary.toLocaleString()}
+                    </Typography>
+                  </Box>
                 )}
+              </Box>
+
+              <Grid container spacing={4}>
+                {/* Job Description */}
+                <Grid item xs={12} md={8}>
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
+                      <Assignment sx={{ mr: 1 }} />
+                      Job Description
+                    </Typography>
+                    <Box sx={{ p: 3, bgcolor: 'background.paper', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {viewJobModal.job.description}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Required Skills */}
+                  {viewJobModal.job.requiredSkills && viewJobModal.job.requiredSkills.length > 0 && (
+                    <Box sx={{ mb: 4 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
+                        <Star sx={{ mr: 1 }} />
+                        Required Skills
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {viewJobModal.job.requiredSkills.map((skill, index) => (
+                          <Chip 
+                            key={index} 
+                            label={skill} 
+                            size="medium" 
+                            color="primary" 
+                            variant="filled"
+                            sx={{ fontWeight: 500, px: 2 }}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Grid>
+
+                {/* Job Details Sidebar */}
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ position: 'sticky', top: 20 }}>
+                    <Box sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 3, mb: 3 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: 'primary.main' }}>
+                        Job Information
+                      </Typography>
+                      <Stack spacing={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Posted Date
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {formatDate(viewJobModal.job.postedDate)}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Job Type
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {viewJobModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Location
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {viewJobModal.job.location}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Applications
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                            {viewJobModal.job.applications || 0} applicants
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                            Status
+                          </Typography>
+                          <Chip 
+                            label={viewJobModal.job.status} 
+                            color={getStatusColor(viewJobModal.job.status)}
+                            size="small"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    {/* Quick Actions */}
+                
+                  </Box>
+                </Grid>
               </Grid>
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={() => setViewJobModal({ open: false, job: null })}>
             Close
           </Button>
@@ -1203,160 +1377,206 @@ function MyJobPostings() {
         maxWidth="lg"
         fullWidth
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Applicants for {applicantsModal.job?.title}
-          </Typography>
+        <DialogTitle sx={{ pb: 2, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+              Applicants for {applicantsModal.job?.title}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Chip 
+                label={`${applicantsModal.applicants.length} applicants`}
+                color="primary"
+                size="medium"
+                sx={{ fontWeight: 600 }}
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  console.log('🔍 Applicants Modal Data:', {
+                    job: applicantsModal.job,
+                    applicants: applicantsModal.applicants,
+                    applicantsCount: applicantsModal.applicants.length
+                  })
+                  alert(`Debug: ${applicantsModal.applicants.length} applicants loaded. Check console for details.`)
+                }}
+              >
+                Debug
+              </Button>
+            </Box>
+          </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 3 }}>
           {applicantsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
               <CircularProgress />
             </Box>
           ) : applicantsModal.applicants.length === 0 ? (
             <Box sx={{ textAlign: 'center', p: 4 }}>
+              <People sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                No applicants yet
+              </Typography>
               <Typography variant="body1" color="text.secondary">
-                No applicants found for this job posting.
+                Applicants will appear here once they apply for this position.
               </Typography>
             </Box>
           ) : (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Applicant Name</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell>Phone</TableCell>
-                    <TableCell>Application Date</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {applicantsModal.applicants.map((application, index) => (
-                    <TableRow key={application.id || index}>
-                      <TableCell>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Avatar sx={{ width: 32, height: 32 }}>
-                            {application.user?.firstName?.charAt(0) || 'U'}
-                          </Avatar>
-                          <Typography variant="body2">
-                            {application.user?.firstName} {application.user?.lastName}
+            <Grid container spacing={3}>
+              {applicantsModal.applicants.map((application, index) => (
+                <Grid item xs={12} key={application.id || index}>
+                  <Card sx={{ 
+                    p: 3, 
+                    border: '1px solid', 
+                    borderColor: 'divider',
+                    borderRadius: 3,
+                    '&:hover': {
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      borderColor: 'primary.main'
+                    }
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main' }}>
+                          <Typography variant="h6" sx={{ fontWeight: 600, color: 'white' }}>
+                            {application.jobSeekerProfile?.firstName?.charAt(0) || application.user?.firstName?.charAt(0) || 'U'}
                           </Typography>
-                        </Stack>
-                      </TableCell>
-                      <TableCell>{application.user?.email || 'N/A'}</TableCell>
-                      <TableCell>{application.user?.phone || 'N/A'}</TableCell>
-                      <TableCell>{formatDate(application.applicationDate)}</TableCell>
-                      <TableCell>
+                        </Avatar>
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            {application.jobSeekerProfile?.firstName} {application.jobSeekerProfile?.lastName} || {application.user?.firstName} {application.user?.lastName}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {application.jobSeekerProfile?.email || application.user?.email}
+                          </Typography>
+                          {application.jobSeekerProfile?.profileCompletionPercent && (
+                            <Box sx={{ mt: 1 }}>
+                              <Typography variant="caption" color="text.secondary">
+                                Profile: {Math.round(application.jobSeekerProfile.profileCompletionPercent)}% Complete
+                              </Typography>
+                              <LinearProgress 
+                                variant="determinate" 
+                                value={application.jobSeekerProfile.profileCompletionPercent}
+                                sx={{ height: 4, borderRadius: 2, mt: 0.5 }}
+                              />
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                      {/* <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Chip 
-                          label={application.status} 
+                          label={application.status?.replace('_', ' ')} 
                           color={getApplicationStatusColor(application.status)}
-                          size="small"
+                          size="medium"
+                          sx={{ fontWeight: 600 }}
                         />
-                      </TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={1}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => {
-                              // Handle view applicant details
-                              console.log('View applicant:', application.user?.id)
-                            }}
-                          >
-                            View
-                          </Button>
-                          <FormControl size="small" sx={{ minWidth: 120 }}>
-                            <Select
-                              value={application.status}
-                              onChange={(e) => {
-                                const newStatus = e.target.value
-                                if (newStatus === 'INTERVIEW_SCHEDULED') {
-                                  // Show date/time picker inline
-                                  setApplicantsModal(prev => ({
-                                    ...prev,
-                                    applicants: prev.applicants.map(app => 
-                                      app.id === application.id 
-                                        ? { ...app, status: newStatus, showDateTimePicker: true }
-                                        : app
-                                    )
-                                  }))
-                                } else {
-                                  handleUpdateApplicationStatus(application.id, newStatus)
-                                }
-                              }}
-                            >
-                              {applicationStatuses.map((status) => (
-                                <MenuItem key={status} value={status}>
-                                  {status.replace('_', ' ')}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        </Stack>
-                        {application.showDateTimePicker && (
-                          <Box sx={{ mt: 1 }}>
-                            <TextField
-                              size="small"
-                              type="datetime-local"
-                              label="Interview Date & Time"
-                              value={application.interviewDateTime || ''}
-                              onChange={(e) => {
-                                setApplicantsModal(prev => ({
-                                  ...prev,
-                                  applicants: prev.applicants.map(app => 
-                                    app.id === application.id 
-                                      ? { ...app, interviewDateTime: e.target.value }
-                                      : app
-                                  )
-                                }))
-                              }}
-                              InputLabelProps={{ shrink: true }}
-                              sx={{ minWidth: 200 }}
-                            />
-                            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                              <Button
-                                size="small"
-                                variant="contained"
-                                onClick={() => handleScheduleInterviewWithDateTime(application)}
-                                disabled={!application.interviewDateTime}
-                              >
-                                Schedule
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => {
-                                  setApplicantsModal(prev => ({
-                                    ...prev,
-                                    applicants: prev.applicants.map(app => 
-                                      app.id === application.id 
-                                        ? { ...app, showDateTimePicker: false, interviewDateTime: '' }
-                                        : app
-                                    )
-                                  }))
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            </Stack>
-                          </Box>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                      
+                      </Box> */}
+                    </Box>
+                    
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Phone
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {application.jobSeekerProfile?.phoneNumber || application.user?.phone || 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Applied Date
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {formatDate(application.applicationDate)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Location
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {application.jobSeekerProfile?.address || application.user?.address || 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6} md={3}>
+                        <Box>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            Education
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {application.jobSeekerProfile?.education || 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+
+                    {/* Additional JobSeeker Information */}
+                    {(application.jobSeekerProfile?.skills || application.jobSeekerProfile?.certifications || application.jobSeekerProfile?.expectedSalary) && (
+                      <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Grid container spacing={2}>
+                          {application.jobSeekerProfile?.skills && application.jobSeekerProfile.skills.length > 0 && (
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                                Skills
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {application.jobSeekerProfile.skills.slice(0, 3).map((skill, index) => (
+                                  <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
+                                ))}
+                                {application.jobSeekerProfile.skills.length > 3 && (
+                                  <Chip label={`+${application.jobSeekerProfile.skills.length - 3} more`} size="small" color="default" variant="outlined" />
+                                )}
+                              </Box>
+                            </Grid>
+                          )}
+                          {application.jobSeekerProfile?.certifications && application.jobSeekerProfile.certifications.length > 0 && (
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                                Certifications
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {application.jobSeekerProfile.certifications.slice(0, 2).map((cert, index) => (
+                                  <Chip key={index} label={cert} size="small" color="secondary" variant="outlined" />
+                                ))}
+                                {application.jobSeekerProfile.certifications.length > 2 && (
+                                  <Chip label={`+${application.jobSeekerProfile.certifications.length - 2} more`} size="small" color="default" variant="outlined" />
+                                )}
+                              </Box>
+                            </Grid>
+                          )}
+                          {application.jobSeekerProfile?.expectedSalary && (
+                            <Grid item xs={12} sm={6}>
+                              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                Expected Salary
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 500, color: 'success.main' }}>
+                                ${application.jobSeekerProfile.expectedSalary.toLocaleString()}
+                              </Typography>
+                            </Grid>
+                          )}
+                        </Grid>
+                      </Box>
+                    )}
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
           <Button onClick={() => setApplicantsModal({ open: false, job: null, applicants: [] })}>
             Close
           </Button>
         </DialogActions>
       </Dialog>
+                              
 
       {/* Interview Scheduling Modal */}
       <Dialog
@@ -1451,6 +1671,15 @@ function MyJobPostings() {
         onClose={() => setActionMenu({ open: false, anchorEl: null, job: null })}
       >
         <MenuItem onClick={() => {
+          handleJobAction(actionMenu.job, 'activate')
+          setActionMenu({ open: false, anchorEl: null, job: null })
+        }}>
+          <ListItemIcon>
+            <CheckBox fontSize="small" />
+          </ListItemIcon>
+          Activate
+        </MenuItem>
+        <MenuItem onClick={() => {
           handleJobAction(actionMenu.job, 'deactivate')
           setActionMenu({ open: false, anchorEl: null, job: null })
         }}>
@@ -1509,7 +1738,6 @@ function MyJobPostings() {
     </PageContainer>
   )
 }
-
 // List New Vacancy Component
 function ListNewVacancy() {
   const [form, setForm] = useState({
@@ -1853,39 +2081,69 @@ function ViewApplicants() {
   const [loading, setLoading] = useState(true)
   const [applicationStatuses, setApplicationStatuses] = useState([])
   const [profileModal, setProfileModal] = useState({ open: false, applicant: null })
-  const [contactModal, setContactModal] = useState({ open: false, applicant: null })
+  const [contactModal, setContactModal] = useState({ open: false, applicant: null, userProfile: null, loading: false, error: null })
+  const [rejectionModal, setRejectionModal] = useState({ open: false, applicationId: null, rejectReason: '' })
+  const [applicantsModal, setApplicantsModal] = useState({ 
+    open: false, 
+    job: null, 
+    applicants: [], 
+    selectedApplicant: null 
+  })
   const [filters, setFilters] = useState({
     status: 'All Statuses',
     job: 'All Jobs'
   })
 
+  const [documentContent, setDocumentContent] = useState({
+    resume: null,
+    coverLetter: null,
+    loading: false,
+    error: null
+  });
+
   useEffect(() => {
     const loadApplications = async () => {
       try {
+        console.log('🔍 Starting to load applications...')
         setLoading(true)
+        
         // Get all jobs for the current employer first
         const jobsResponse = await jobAPI.getEmployerJobs()
+        console.log('🔍 Jobs loaded:', jobsResponse)
         const jobs = jobsResponse || []
         
         // Fetch applications for each job with complete details
         const allApplications = []
         for (const job of jobs) {
           try {
+            console.log(`🔍 Loading applications for job: ${job.title} (ID: ${job.id})`)
             const jobApplications = await applicationAPI.getJobApplicationsWithUserDetails(job.id)
+            console.log(`🔍 Applications for job ${job.title}:`, jobApplications)
+            
             if (jobApplications && jobApplications.length > 0) {
-              allApplications.push(...jobApplications)
+              // Add job information to each application
+              const applicationsWithJobInfo = jobApplications.map(app => ({
+                ...app,
+                jobTitle: job.title,
+                companyName: job.companyName || job.company,
+                jobId: job.id
+              }))
+              allApplications.push(...applicationsWithJobInfo)
             }
           } catch (error) {
-            console.error(`Failed to load applications for job ${job.id}:`, error)
+            console.error(`❌ Failed to load applications for job ${job.id}:`, error)
           }
         }
         
+        console.log('🔍 Total applications loaded:', allApplications.length)
+        console.log('🔍 Applications data:', allApplications)
         setApplications(allApplications)
       } catch (error) {
-        console.error('Failed to load applications:', error)
+        console.error('❌ Failed to load applications:', error)
         setApplications([])
       } finally {
         setLoading(false)
+        console.log('🔍 Loading finished')
       }
     }
 
@@ -1901,8 +2159,7 @@ function ViewApplicants() {
           'UNDER_REVIEW', 
           'INTERVIEW_SCHEDULED',
           'OFFERED',
-          'REJECTED',
-          'WITHDRAWN'
+          'REJECTED'
         ])
       }
     }
@@ -1923,9 +2180,9 @@ function ViewApplicants() {
   const totalApplications = applications.length
   const filteredCount = filteredApplications.length
 
-  const handleUpdateApplicationStatus = async (applicationId, newStatus) => {
+  const handleUpdateApplicationStatus = async (applicationId, newStatus, rejectReason = null) => {
     try {
-      await applicationAPI.updateApplicationStatus(applicationId, newStatus)
+      await applicationAPI.updateApplicationStatus(applicationId, newStatus, rejectReason)
       
       // Update the application status in the local state
       setApplications(prev => prev.map(app => {
@@ -1935,7 +2192,8 @@ function ViewApplicants() {
             ...app,
             application: {
               ...app.application,
-              status: newStatus
+              status: newStatus,
+              rejectReason: rejectReason
             }
           }
         }
@@ -1955,7 +2213,8 @@ function ViewApplicants() {
               ...app,
               application: {
                 ...app.application,
-                status: newStatus
+                status: newStatus,
+                rejectReason: rejectReason
               }
             }
           }
@@ -1963,6 +2222,21 @@ function ViewApplicants() {
         }))
         console.log('Application status updated locally (backend not available)')
       }
+    }
+  }
+
+  const handleRejectionWithReason = async () => {
+    if (!rejectionModal.rejectReason.trim()) {
+      alert('Please provide a rejection reason')
+      return
+    }
+    
+    try {
+      await handleUpdateApplicationStatus(rejectionModal.applicationId, 'REJECTED', rejectionModal.rejectReason.trim())
+      setRejectionModal({ open: false, applicationId: null, rejectReason: '' })
+    } catch (error) {
+      console.error('Failed to reject application:', error)
+      alert('Failed to reject application: ' + error.message)
     }
   }
 
@@ -2022,18 +2296,304 @@ function ViewApplicants() {
     }
   }
 
-  const handleViewProfile = (applicant) => {
-    setProfileModal({
-      open: true,
-      applicant
-    })
+  const handleViewProfile = async (applicant) => {
+    try {
+      console.log('🔍 Loading complete profile for applicant:', applicant)
+      
+      // Get the user ID from the application
+      const userId = applicant.application?.userId || applicant.user?.id
+      if (!userId) {
+        console.error('❌ No user ID found in application:', applicant)
+        setProfileModal({
+          open: true,
+          applicant,
+          loading: false,
+          error: 'No user ID found'
+        })
+        return
+      }
+
+      setProfileModal({
+        open: true,
+        applicant,
+        loading: true,
+        error: null
+      })
+
+      // Fetch complete user profile
+      const userProfile = await userAPI.getUserProfileById(userId)
+      console.log('✅ Complete user profile loaded:', userProfile)
+      console.log('🔍 JobSeeker data:', userProfile?.jobSeeker)
+      console.log('🔍 Resume document:', userProfile?.resumeDocument)
+      console.log('🔍 Cover letter document:', userProfile?.coverLetterDocument)
+
+      setProfileModal({
+        open: true,
+        applicant,
+        userProfile,
+        loading: false,
+        error: null
+      })
+    } catch (error) {
+      console.error('❌ Failed to load user profile:', error)
+      setProfileModal({
+        open: true,
+        applicant,
+        loading: false,
+        error: error.message
+      })
+    }
   }
 
-  const handleContact = (applicant) => {
-    setContactModal({
-      open: true,
-      applicant
-    })
+  const handleContact = async (applicant) => {
+    try {
+      console.log('📞 Loading contact information for:', applicant)
+      
+      // Set loading state
+      setContactModal({
+        open: true,
+        applicant,
+        userProfile: null,
+        loading: true,
+        error: null
+      })
+
+      // Get the user ID from the application
+      const userId = applicant.application?.userId || applicant.user?.id
+      if (!userId) {
+        console.error('❌ No user ID found in application:', applicant)
+        setContactModal(prev => ({
+          ...prev,
+          loading: false,
+          error: 'No user ID found for this applicant'
+        }))
+        return
+      }
+
+      // Fetch complete applicant profile from JobSeeker table
+      const userProfile = await userAPI.getUserProfileById(userId)
+      console.log('✅ Contact profile loaded:', userProfile)
+
+      // Update modal with complete data
+      setContactModal(prev => ({
+        ...prev,
+        userProfile,
+        loading: false,
+        error: null
+      }))
+    } catch (error) {
+      console.error('❌ Failed to load contact information:', error)
+      setContactModal(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load contact information: ' + error.message
+      }))
+    }
+  }
+
+  const handleViewApplicantDetails = async (application) => {
+    try {
+      console.log('🔍 Loading applicant details for:', application)
+      
+      // Get the user ID from the application
+      const userId = application.application?.userId || application.user?.id
+      if (!userId) {
+        console.error('❌ No user ID found in application:', application)
+        alert('No user ID found for this applicant')
+        return
+      }
+
+      // Fetch complete applicant profile from JobSeeker table
+      const applicantProfile = await userAPI.getUserProfileById(userId)
+      console.log('✅ Applicant profile loaded:', applicantProfile)
+
+      // Open the applicant details modal with complete data
+      setApplicantsModal(prev => ({
+        ...prev,
+        selectedApplicant: {
+          ...application,
+          profile: applicantProfile
+        }
+      }))
+    } catch (error) {
+      console.error('❌ Failed to load applicant details:', error)
+      alert('Failed to load applicant details: ' + error.message)
+    }
+  }
+
+  const handleDownloadResume = async (userId) => {
+    try {
+      console.log('📄 Downloading resume for user:', userId)
+      
+      // Check if user has a resume document ID
+      const applicantProfile = await userAPI.getUserProfileById(userId)
+      if (!applicantProfile?.resumeDocumentId) {
+        alert('No resume document found for this applicant')
+        return
+      }
+      
+      console.log('📄 Resume document ID:', applicantProfile.resumeDocumentId)
+      const blob = await userAPI.downloadResume(userId)
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `resume_${userId}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      console.log('✅ Resume downloaded successfully')
+    } catch (error) {
+      console.error('❌ Failed to download resume:', error)
+      if (error.message.includes('404')) {
+        alert('Resume document not found. The applicant may not have uploaded a resume.')
+      } else {
+        alert('Failed to download resume: ' + error.message)
+      }
+    }
+  }
+
+  const handleDownloadCoverLetter = async (userId) => {
+    try {
+      console.log('📄 Downloading cover letter for user:', userId)
+      
+      // Check if user has a cover letter document ID
+      const applicantProfile = await userAPI.getUserProfileById(userId)
+      if (!applicantProfile?.coverLetterDocumentId) {
+        alert('No cover letter document found for this applicant')
+        return
+      }
+      
+      console.log('📄 Cover letter document ID:', applicantProfile.coverLetterDocumentId)
+      const blob = await userAPI.downloadCoverLetter(userId)
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `cover_letter_${userId}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      console.log('✅ Cover letter downloaded successfully')
+    } catch (error) {
+      console.error('❌ Failed to download cover letter:', error)
+      if (error.message.includes('404')) {
+        alert('Cover letter document not found. The applicant may not have uploaded a cover letter.')
+      } else {
+        alert('Failed to download cover letter: ' + error.message)
+      }
+    }
+  }
+
+  const loadDocumentContent = async (userId, documentType) => {
+    try {
+      console.log(`📄 Loading ${documentType} content for user:`, userId);
+      setDocumentContent(prev => ({ ...prev, loading: true, error: null }));
+      
+      let blob;
+      if (documentType === 'resume') {
+        blob = await userAPI.downloadResume(userId);
+      } else if (documentType === 'coverLetter') {
+        blob = await userAPI.downloadCoverLetter(userId);
+      }
+      
+      // Convert blob to text for display
+      const text = await blob.text();
+      console.log(`✅ ${documentType} content loaded:`, text.substring(0, 100) + '...');
+      
+      setDocumentContent(prev => ({
+        ...prev,
+        [documentType]: text,
+        loading: false
+      }));
+    } catch (error) {
+      console.error(`❌ Failed to load ${documentType}:`, error);
+      setDocumentContent(prev => ({
+        ...prev,
+        loading: false,
+        error: `Failed to load ${documentType}: ${error.message}`
+      }));
+    }
+  };
+
+  const openDocumentInNewTab = async (userId, documentType) => {
+    try {
+      console.log(`📄 Opening ${documentType} in new tab for user:`, userId)
+      
+      // Check if document exists
+      const applicantProfile = await userAPI.getUserProfileById(userId)
+      console.log(`🔍 Applicant profile:`, applicantProfile)
+      console.log(`🔍 JobSeeker data:`, applicantProfile?.jobSeeker)
+      
+      const documentId = documentType === 'resume' ? 
+        applicantProfile?.jobSeeker?.resumeDocumentId || applicantProfile?.resumeDocumentId : 
+        applicantProfile?.jobSeeker?.coverLetterDocumentId || applicantProfile?.coverLetterDocumentId
+      
+      console.log(`🔍 Document ID for ${documentType}:`, documentId)
+      
+      if (!documentId) {
+        console.warn(`⚠️ No ${documentType} document ID found`)
+        console.log(`🔍 Full profile structure:`, JSON.stringify(applicantProfile, null, 2))
+        alert(`No ${documentType} document found for this applicant`)
+        return
+      }
+      
+      // Get the document blob
+      let blob
+      if (documentType === 'resume') {
+        console.log(`📄 Downloading resume for user: ${userId}`)
+        blob = await userAPI.downloadResume(userId)
+      } else if (documentType === 'coverLetter') {
+        console.log(`📄 Downloading cover letter for user: ${userId}`)
+        blob = await userAPI.downloadCoverLetter(userId)
+      }
+      
+      console.log(`✅ Document blob received:`, blob)
+      console.log(`📄 Blob size:`, blob.size)
+      console.log(`📄 Blob type:`, blob.type)
+      
+      // Create a URL for the blob
+      const url = window.URL.createObjectURL(blob)
+      console.log(`📄 Created blob URL:`, url)
+      
+      // Open in new tab
+      const newTab = window.open(url, '_blank')
+      
+      if (newTab) {
+        console.log(`✅ ${documentType} opened in new tab successfully`)
+      } else {
+        console.warn(`⚠️ Popup blocked, trying to download instead`)
+        // Fallback to download if popup is blocked
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `${documentType}_${userId}.pdf`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+      
+      // Clean up the URL after a delay
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url)
+        console.log(`🧹 Cleaned up blob URL`)
+      }, 1000)
+      
+    } catch (error) {
+      console.error(`❌ Failed to open ${documentType}:`, error)
+      console.error(`❌ Error details:`, {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      })
+      alert(`Failed to open ${documentType}: ${error.message}`)
+    }
   }
 
   // Helper function to get application status color
@@ -2044,7 +2604,6 @@ function ViewApplicants() {
       case 'INTERVIEW_SCHEDULED': return 'primary'
       case 'OFFERED': return 'success'
       case 'REJECTED': return 'error'
-      case 'WITHDRAWN': return 'default'
       default: return 'info'
     }
   }
@@ -2062,8 +2621,11 @@ function ViewApplicants() {
   return (
     <PageContainer>
       <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700 }}>
-        Applications
+        Applications ({totalApplications})
       </AnimatedTypography>
+
+      {/* Debug Section */}
+    
 
       {/* Filters and Stats */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -2086,7 +2648,6 @@ function ViewApplicants() {
                 <MenuItem value="INTERVIEW_SCHEDULED">Interview Scheduled</MenuItem>
                 <MenuItem value="OFFERED">Offered</MenuItem>
                 <MenuItem value="REJECTED">Rejected</MenuItem>
-                <MenuItem value="WITHDRAWN">Withdrawn</MenuItem>
               </TextField>
             </DashboardCard>
           </AnimatedBox>
@@ -2162,9 +2723,58 @@ function ViewApplicants() {
                 <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
                   No applications found
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                   {applications.length === 0 ? 'No applications have been submitted yet.' : 'No applications match your current filters.'}
                 </Typography>
+                
+                {/* Add sample data for testing */}
+                <Button 
+                  variant="outlined" 
+                  onClick={() => {
+                    const sampleApplications = [
+                      {
+                        id: 'sample-1',
+                        application: {
+                          id: 'app-1',
+                          status: 'RECEIVED',
+                          applicationDate: new Date().toISOString(),
+                          userId: 'user-1'
+                        },
+                        applicantName: 'John Doe',
+                        email: 'john.doe@example.com',
+                        phoneNumber: '+1-555-0123',
+                        location: 'New York, NY',
+                        jobTitle: 'Software Developer',
+                        companyName: 'Tech Corp',
+                        education: 'Bachelor in Computer Science',
+                        skills: ['JavaScript', 'React', 'Node.js'],
+                        certifications: ['AWS Certified Developer']
+                      },
+                      {
+                        id: 'sample-2',
+                        application: {
+                          id: 'app-2',
+                          status: 'UNDER_REVIEW',
+                          applicationDate: new Date().toISOString(),
+                          userId: 'user-2'
+                        },
+                        applicantName: 'Jane Smith',
+                        email: 'jane.smith@example.com',
+                        phoneNumber: '+1-555-0456',
+                        location: 'San Francisco, CA',
+                        jobTitle: 'Data Analyst',
+                        companyName: 'Data Corp',
+                        education: 'Master in Data Science',
+                        skills: ['Python', 'SQL', 'Tableau'],
+                        certifications: ['Google Data Analytics']
+                      }
+                    ]
+                    setApplications(sampleApplications)
+                    console.log('🔍 Sample data loaded:', sampleApplications)
+                  }}
+                >
+                  Load Sample Data (Testing)
+                </Button>
               </Box>
             ) : (
               <Stack spacing={2}>
@@ -2194,6 +2804,7 @@ function ViewApplicants() {
                             {Math.floor(Math.random() * 30) + 70}% Match
                           </Typography>
                         </Box>
+                       
                         <Typography variant="body1" sx={{ color: 'primary.main', fontWeight: 500 }}>
                           {application.jobTitle || 'Job Title'}
                         </Typography>
@@ -2241,6 +2852,18 @@ function ViewApplicants() {
                               new Date().toLocaleDateString()}
                           </Typography>
                         </Box>
+                         {/* Show rejection reason if status is REJECTED */}
+                         {(application.application?.status === 'REJECTED' || application.status === 'REJECTED') && 
+                         (application.application?.rejectReason || application.rejectReason) && (
+                          <Box sx={{mt: 1, p: 1, borderRadius: 1, border: '0.5px solid', borderColor: 'error.main' }}>
+                            <Typography variant="body2" sx={{ color: 'error.dark', fontWeight: 500, mb: 0.5 }}>
+                              Rejection Reason: {application.application?.rejectReason || application.rejectReason}
+
+                            </Typography>
+                            {/* <Typography variant="body2" sx={{ color: 'error.dark' }}>
+                            </Typography> */}
+                          </Box>
+                        )}
                       </Grid>
                     </Grid>
 
@@ -2300,6 +2923,13 @@ function ViewApplicants() {
                                 }
                                 return app
                               }))
+                            } else if (newStatus === 'REJECTED') {
+                              // Show rejection reason modal
+                              setRejectionModal({
+                                open: true,
+                                applicationId: application.application?.id || application.id,
+                                rejectReason: ''
+                              })
                             } else {
                               handleUpdateApplicationStatus(application.application?.id || application.id, newStatus)
                             }
@@ -2313,14 +2943,7 @@ function ViewApplicants() {
                           ))}
                         </Select>
                       </FormControl>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<Visibility />}
-                        onClick={() => handleViewProfile(application)}
-                      >
-                        View Profile
-                      </Button>
+               
                       <Button
                         size="small"
                         variant="outlined"
@@ -2328,6 +2951,14 @@ function ViewApplicants() {
                         onClick={() => handleContact(application)}
                       >
                         Contact
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<Visibility />}
+                        onClick={() => handleViewApplicantDetails(application)}
+                      >
+                        View Details
                       </Button>
                     </Box>
                     {application.showDateTimePicker && (
@@ -2396,58 +3027,146 @@ function ViewApplicants() {
       {/* Profile Modal */}
       <Dialog
         open={profileModal.open}
-        onClose={() => setProfileModal({ open: false, applicant: null })}
-        maxWidth="md"
+        onClose={() => setProfileModal({ open: false, applicant: null, userProfile: null, loading: false, error: null })}
+        maxWidth="lg"
         fullWidth
       >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Applicant Profile
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {profileModal.applicant?.jobTitle || 'Job Application'}
-          </Typography>
+        <DialogTitle sx={{ pb: 2, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                Applicant Profile
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {profileModal.applicant?.jobTitle || 'Job Application'}
+              </Typography>
+            </Box>
+            {profileModal.userProfile && (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                                 <Button
+                   variant="outlined"
+                   startIcon={<Description />}
+                   onClick={() => {
+                     const userId = profileModal.applicant?.application?.userId || profileModal.applicant?.user?.id
+                     if (userId) handleDownloadResume(userId)
+                   }}
+                   disabled={!profileModal.userProfile?.resumeDocumentId}
+                 >
+                   Download Resume
+                 </Button>
+                 <Button
+                   variant="outlined"
+                   startIcon={<Description />}
+                   onClick={() => {
+                     const userId = profileModal.applicant?.application?.userId || profileModal.applicant?.user?.id
+                     if (userId) handleDownloadCoverLetter(userId)
+                   }}
+                   disabled={!profileModal.userProfile?.coverLetterDocumentId}
+                 >
+                   Download Cover Letter
+                 </Button>
+              </Box>
+            )}
+          </Box>
         </DialogTitle>
-        <DialogContent>
-          {profileModal.applicant ? (
+        <DialogContent sx={{ pt: 3 }}>
+          {profileModal.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : profileModal.error ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="error" sx={{ mb: 2 }}>
+                Error: {profileModal.error}
+              </Typography>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  const applicant = profileModal.applicant
+                  setProfileModal({ open: false, applicant: null, userProfile: null, loading: false, error: null })
+                  setTimeout(() => handleViewProfile(applicant), 100)
+                }}
+              >
+                Retry
+              </Button>
+            </Box>
+          ) : profileModal.applicant ? (
             <Box sx={{ pt: 1 }}>
               <Grid container spacing={3}>
+                {/* Header Section */}
                 <Grid item xs={12}>
-                  <Typography variant="h5" sx={{ fontWeight: 700, mb: 2, color: 'primary.main' }}>
-                    {profileModal.applicant.applicantName || 'Applicant Name'}
-                  </Typography>
+                  <Box sx={{ 
+                    p: 3, 
+                    bgcolor: 'primary.light', 
+                    borderRadius: 2, 
+                    color: 'white',
+                    mb: 3
+                  }}>
+                                         <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                       {profileModal.userProfile?.jobSeeker?.firstName} {profileModal.userProfile?.jobSeeker?.lastName}
+                     </Typography>
+                     <Typography variant="h6" sx={{ opacity: 0.9 }}>
+                       {profileModal.userProfile?.jobSeeker?.email}
+                     </Typography>
+                     {profileModal.userProfile?.jobSeeker?.profileCompletionPercent && (
+                       <Box sx={{ mt: 2 }}>
+                         <Typography variant="body2" sx={{ mb: 1 }}>
+                           Profile Completion: {Math.round(profileModal.userProfile.jobSeeker.profileCompletionPercent)}%
+                         </Typography>
+                         <LinearProgress 
+                           variant="determinate" 
+                           value={profileModal.userProfile.jobSeeker.profileCompletionPercent}
+                           sx={{ height: 8, borderRadius: 4 }}
+                         />
+                       </Box>
+                     )}
+                  </Box>
                 </Grid>
-                
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Email</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {profileModal.applicant.email || 'N/A'}
-                  </Typography>
-                </Grid>
-                
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {profileModal.applicant.phoneNumber || 'N/A'}
-                  </Typography>
-                </Grid>
-                
+
+                {/* Contact Information */}
                 <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary">Address</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {profileModal.applicant.address || 'N/A'}
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Contact Information
                   </Typography>
                 </Grid>
                 
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Date of Birth</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {profileModal.applicant.dateOfBirth ? 
-                      new Date(profileModal.applicant.dateOfBirth).toLocaleDateString() : 
-                      'N/A'
-                    }
+                                 <Grid item xs={12} sm={6}>
+                   <Typography variant="subtitle2" color="text.secondary">Email Address</Typography>
+                   <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                     {profileModal.userProfile?.jobSeeker?.email || profileModal.applicant.email || 'N/A'}
+                   </Typography>
+                 </Grid>
+                 
+                 <Grid item xs={12} sm={6}>
+                   <Typography variant="subtitle2" color="text.secondary">Phone Number</Typography>
+                   <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                     {profileModal.userProfile?.jobSeeker?.phoneNumber || profileModal.applicant.phoneNumber || 'N/A'}
+                   </Typography>
+                 </Grid>
+                 
+                 <Grid item xs={12}>
+                   <Typography variant="subtitle2" color="text.secondary">Address</Typography>
+                   <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                     {profileModal.userProfile?.jobSeeker?.address || profileModal.applicant.address || 'N/A'}
+                   </Typography>
+                 </Grid>
+
+                {/* Personal Information */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Personal Information
                   </Typography>
                 </Grid>
+                
+                                 <Grid item xs={12} sm={6}>
+                   <Typography variant="subtitle2" color="text.secondary">Date of Birth</Typography>
+                   <Typography variant="body1" sx={{ mb: 2 }}>
+                     {profileModal.userProfile?.jobSeeker?.dateOfBirth ? 
+                       new Date(profileModal.userProfile.jobSeeker.dateOfBirth).toLocaleDateString() : 
+                       'N/A'
+                     }
+                   </Typography>
+                 </Grid>
                 
                 <Grid item xs={12} sm={6}>
                   <Typography variant="subtitle2" color="text.secondary">Applied Date</Typography>
@@ -2458,59 +3177,240 @@ function ViewApplicants() {
                     }
                   </Typography>
                 </Grid>
-                
-                {profileModal.applicant.education && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">Education</Typography>
-                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
-                      {profileModal.applicant.education}
-                    </Typography>
-                  </Grid>
-                )}
-                
-                {profileModal.applicant.workHistory && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">Work History</Typography>
-                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
-                      {profileModal.applicant.workHistory}
-                    </Typography>
-                  </Grid>
-                )}
-                
-                {profileModal.applicant.skills && profileModal.applicant.skills.length > 0 && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">Skills</Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                      {profileModal.applicant.skills.map((skill, index) => (
-                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
-                      ))}
-                    </Box>
-                  </Grid>
-                )}
-                
-                {profileModal.applicant.certifications && profileModal.applicant.certifications.length > 0 && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">Certifications</Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                      {profileModal.applicant.certifications.map((cert, index) => (
-                        <Chip key={index} label={cert} size="small" color="success" variant="outlined" />
-                      ))}
-                    </Box>
-                  </Grid>
-                )}
-                
+
+                {/* Professional Information */}
                 <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary">Veteran Status</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {profileModal.applicant.veteranStatus ? 'Yes' : 'No'}
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Professional Information
                   </Typography>
                 </Grid>
                 
+                                 {profileModal.userProfile?.jobSeeker?.education && (
+                   <Grid item xs={12}>
+                     <Typography variant="subtitle2" color="text.secondary">Education</Typography>
+                     <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                       {profileModal.userProfile.jobSeeker.education}
+                     </Typography>
+                   </Grid>
+                 )}
+                 
+                 {profileModal.userProfile?.jobSeeker?.workHistory && (
+                   <Grid item xs={12}>
+                     <Typography variant="subtitle2" color="text.secondary">Work History</Typography>
+                     <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                       {profileModal.userProfile.jobSeeker.workHistory}
+                     </Typography>
+                   </Grid>
+                 )}
+                 
+                 {profileModal.userProfile?.jobSeeker?.skills && profileModal.userProfile.jobSeeker.skills.length > 0 && (
+                   <Grid item xs={12}>
+                     <Typography variant="subtitle2" color="text.secondary">Skills</Typography>
+                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                       {profileModal.userProfile.jobSeeker.skills.map((skill, index) => (
+                         <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
+                       ))}
+                     </Box>
+                   </Grid>
+                 )}
+                 
+                 {profileModal.userProfile?.jobSeeker?.certifications && profileModal.userProfile.jobSeeker.certifications.length > 0 && (
+                   <Grid item xs={12}>
+                     <Typography variant="subtitle2" color="text.secondary">Certifications</Typography>
+                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                       {profileModal.userProfile.jobSeeker.certifications.map((cert, index) => (
+                         <Chip key={index} label={cert} size="small" color="success" variant="outlined" />
+                       ))}
+                     </Box>
+                   </Grid>
+                 )}
+
+                {/* Military Status */}
                 <Grid item xs={12}>
-                  <Typography variant="subtitle2" color="text.secondary">Military Spouse</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {profileModal.applicant.spouseStatus ? 'Yes' : 'No'}
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Military Status
                   </Typography>
+                </Grid>
+                
+                                 <Grid item xs={12} sm={6}>
+                   <Typography variant="subtitle2" color="text.secondary">Veteran Status</Typography>
+                   <Typography variant="body1" sx={{ mb: 2 }}>
+                     {profileModal.userProfile?.jobSeeker?.veteran ? 'Yes' : 'No'}
+                   </Typography>
+                 </Grid>
+                 
+                 <Grid item xs={12} sm={6}>
+                   <Typography variant="subtitle2" color="text.secondary">Military Spouse</Typography>
+                   <Typography variant="body1" sx={{ mb: 2 }}>
+                     {profileModal.userProfile?.jobSeeker?.spouse ? 'Yes' : 'No'}
+                   </Typography>
+                 </Grid>
+
+                {/* Job Seeker Specific Information */}
+                {profileModal.userProfile?.jobSeeker && (
+                  <>
+                    <Grid item xs={12}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                        Job Seeker Profile
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" color="text.secondary">Preferred Job Type</Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        {profileModal.userProfile.jobSeeker.preferredJobType || 'N/A'}
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" color="text.secondary">Preferred Location</Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        {profileModal.userProfile.jobSeeker.preferredLocation || 'N/A'}
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" color="text.secondary">Expected Salary</Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        {profileModal.userProfile.jobSeeker.expectedSalary ? 
+                          `$${profileModal.userProfile.jobSeeker.expectedSalary}` : 'N/A'
+                        }
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" color="text.secondary">Availability</Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        {profileModal.userProfile.jobSeeker.availability || 'N/A'}
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" color="text.secondary">Willing to Relocate</Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        {profileModal.userProfile.jobSeeker.willingToRelocate ? 'Yes' : 'No'}
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle2" color="text.secondary">Resource Referral Opt-in</Typography>
+                      <Typography variant="body1" sx={{ mb: 2 }}>
+                        {profileModal.userProfile.jobSeeker.resourceReferralOptIn ? 'Yes' : 'No'}
+                      </Typography>
+                    </Grid>
+                    
+                    {profileModal.userProfile.jobSeeker.linkedInProfile && (
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="subtitle2" color="text.secondary">LinkedIn Profile</Typography>
+                        <Typography variant="body1" sx={{ mb: 2 }}>
+                          <a 
+                            href={profileModal.userProfile.jobSeeker.linkedInProfile} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'underline' }}
+                          >
+                            View Profile
+                          </a>
+                        </Typography>
+                      </Grid>
+                    )}
+                    
+                    {profileModal.userProfile.jobSeeker.portfolioUrl && (
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="subtitle2" color="text.secondary">Portfolio URL</Typography>
+                        <Typography variant="body1" sx={{ mb: 2 }}>
+                          <a 
+                            href={profileModal.userProfile.jobSeeker.portfolioUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'underline' }}
+                          >
+                            View Portfolio
+                          </a>
+                        </Typography>
+                      </Grid>
+                    )}
+                    
+                    {profileModal.userProfile.jobSeeker.summary && (
+                      <Grid item xs={12}>
+                        <Typography variant="subtitle2" color="text.secondary">Professional Summary</Typography>
+                        <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                          {profileModal.userProfile.jobSeeker.summary}
+                        </Typography>
+                      </Grid>
+                    )}
+                  </>
+                )}
+
+                {/* Documents Section */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Documents
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ 
+                    p: 2, 
+                    border: '1px solid', 
+                    borderColor: 'divider', 
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2
+                  }}>
+                    <Description color="primary" />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2">Resume</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {applicantsModal.selectedApplicant?.profile?.resumeDocumentId ? 'Available' : 'Not uploaded'}
+                      </Typography>
+                    </Box>
+                    {applicantsModal.selectedApplicant?.profile?.resumeDocumentId && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                          if (userId) handleDownloadResume(userId)
+                        }}
+                      >
+                        Download
+                      </Button>
+                    )}
+                  </Box>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ 
+                    p: 2, 
+                    border: '1px solid', 
+                    borderColor: 'divider', 
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2
+                  }}>
+                    <Description color="primary" />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2">Cover Letter</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId ? 'Available' : 'Not uploaded'}
+                      </Typography>
+                    </Box>
+                    {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                          if (userId) handleDownloadCoverLetter(userId)
+                        }}
+                      >
+                        Download
+                      </Button>
+                    )}
+                  </Box>
                 </Grid>
               </Grid>
             </Box>
@@ -2523,7 +3423,7 @@ function ViewApplicants() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setProfileModal({ open: false, applicant: null })}>
+          <Button onClick={() => setProfileModal({ open: false, applicant: null, userProfile: null, loading: false, error: null })}>
             Close
           </Button>
         </DialogActions>
@@ -2532,8 +3432,8 @@ function ViewApplicants() {
       {/* Contact Modal */}
       <Dialog
         open={contactModal.open}
-        onClose={() => setContactModal({ open: false, applicant: null })}
-        maxWidth="sm"
+        onClose={() => setContactModal({ open: false, applicant: null, userProfile: null, loading: false, error: null })}
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle sx={{ pb: 1 }}>
@@ -2545,42 +3445,86 @@ function ViewApplicants() {
           </Typography>
         </DialogTitle>
         <DialogContent>
-          {contactModal.applicant ? (
+          {contactModal.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : contactModal.error ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="error" sx={{ mb: 2 }}>
+                Error: {contactModal.error}
+              </Typography>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  const applicant = contactModal.applicant
+                  setContactModal({ open: false, applicant: null, userProfile: null, loading: false, error: null })
+                  setTimeout(() => handleContact(applicant), 100)
+                }}
+              >
+                Retry
+              </Button>
+            </Box>
+          ) : contactModal.applicant ? (
             <Box sx={{ pt: 1 }}>
               <Grid container spacing={3}>
                 <Grid item xs={12}>
                   <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
-                    {contactModal.applicant.applicantName || 'Applicant Name'}
+                    {contactModal.userProfile?.jobSeeker?.firstName} {contactModal.userProfile?.jobSeeker?.lastName}
                   </Typography>
                 </Grid>
                 
                 <Grid item xs={12}>
                   <Typography variant="subtitle2" color="text.secondary">Email Address</Typography>
                   <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
-                    {contactModal.applicant.email || 'N/A'}
+                    {contactModal.userProfile?.jobSeeker?.email || contactModal.applicant.email || 'N/A'}
                   </Typography>
                 </Grid>
                 
                 <Grid item xs={12}>
                   <Typography variant="subtitle2" color="text.secondary">Phone Number</Typography>
                   <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
-                    {contactModal.applicant.phoneNumber || 'N/A'}
+                    {contactModal.userProfile?.jobSeeker?.phoneNumber || contactModal.applicant.phoneNumber || 'N/A'}
                   </Typography>
                 </Grid>
                 
                 <Grid item xs={12}>
                   <Typography variant="subtitle2" color="text.secondary">Address</Typography>
                   <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
-                    {contactModal.applicant.address || 'N/A'}
+                    {contactModal.userProfile?.jobSeeker?.address || contactModal.applicant.address || 'N/A'}
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">LinkedIn Profile</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {contactModal.userProfile?.jobSeeker?.linkedInProfile ? (
+                      <a 
+                        href={contactModal.userProfile.jobSeeker.linkedInProfile} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'underline' }}
+                      >
+                        View LinkedIn Profile
+                      </a>
+                    ) : 'Not provided'}
                   </Typography>
                 </Grid>
                 
                 <Grid item xs={12}>
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    <Typography variant="body2">
-                      <strong>Note:</strong> Use this contact information to reach out to the applicant regarding their application.
-                    </Typography>
-                  </Alert>
+                  <Typography variant="subtitle2" color="text.secondary">Portfolio/GitHub</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {contactModal.userProfile?.jobSeeker?.portfolioUrl ? (
+                      <a 
+                        href={contactModal.userProfile.jobSeeker.portfolioUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'underline' }}
+                      >
+                        View Portfolio
+                      </a>
+                    ) : 'Not provided'}
+                  </Typography>
                 </Grid>
               </Grid>
             </Box>
@@ -2593,8 +3537,543 @@ function ViewApplicants() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setContactModal({ open: false, applicant: null })}>
+          <Button onClick={() => setContactModal({ open: false, applicant: null, userProfile: null, loading: false, error: null })}>
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Applicant Details Modal */}
+      <Dialog
+        open={applicantsModal.selectedApplicant !== null}
+        onClose={() => setApplicantsModal(prev => ({ ...prev, selectedApplicant: null }))}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 2, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                Applicant Details
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {applicantsModal.selectedApplicant?.profile?.jobSeeker?.firstName} {applicantsModal.selectedApplicant?.profile?.jobSeeker?.lastName}
+              </Typography>
+            </Box>
+            {applicantsModal.selectedApplicant?.profile && (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<Description />}
+                  onClick={() => {
+                    const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                    if (userId) handleDownloadResume(userId)
+                  }}
+                  disabled={!applicantsModal.selectedApplicant?.profile?.resumeDocumentId}
+                >
+                  Download Resume
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<Description />}
+                  onClick={() => {
+                    const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                    if (userId) handleDownloadCoverLetter(userId)
+                  }}
+                  disabled={!applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId}
+                >
+                  Download Cover Letter
+                </Button>
+              </Box>
+            )}
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          {applicantsModal.selectedApplicant && applicantsModal.selectedApplicant.profile ? (
+            <Box>
+              <Grid container spacing={3}>
+                {/* Header Section */}
+                <Grid item xs={12}>
+                  <Box sx={{ 
+                    p: 3, 
+                    bgcolor: 'primary.light', 
+                    borderRadius: 2, 
+                    color: 'white',
+                    mb: 3
+                  }}>
+                    <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.firstName || applicantsModal.selectedApplicant?.profile?.user?.firstName} {applicantsModal.selectedApplicant?.profile?.jobSeeker?.lastName || applicantsModal.selectedApplicant?.profile?.user?.lastName}
+                    </Typography>
+                    <Typography variant="h6" sx={{ opacity: 0.9 }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.email || applicantsModal.selectedApplicant?.profile?.user?.email}
+                    </Typography>
+                    {(applicantsModal.selectedApplicant?.profile?.jobSeeker?.profileCompletionPercent || applicantsModal.selectedApplicant?.profile?.user?.profileCompletionPercent) && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                          Profile Completion: {Math.round(applicantsModal.selectedApplicant?.profile?.jobSeeker?.profileCompletionPercent || applicantsModal.selectedApplicant?.profile?.user?.profileCompletionPercent || 0)}%
+                        </Typography>
+                        <LinearProgress 
+                          variant="determinate" 
+                          value={applicantsModal.selectedApplicant?.profile?.jobSeeker?.profileCompletionPercent || applicantsModal.selectedApplicant?.profile?.user?.profileCompletionPercent || 0}
+                          sx={{ height: 8, borderRadius: 4 }}
+                        />
+                      </Box>
+                    )}
+                  </Box>
+                </Grid>
+
+                {/* Personal Information */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Personal Information
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Date of Birth</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.dateOfBirth ? 
+                      new Date(applicantsModal.selectedApplicant.profile.jobSeeker.dateOfBirth).toLocaleDateString() : 'N/A'
+                    }
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Applied Date</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {applicantsModal.selectedApplicant?.application?.appliedDate ? 
+                      new Date(applicantsModal.selectedApplicant.application.appliedDate).toLocaleDateString() : 'N/A'
+                    }
+                  </Typography>
+                </Grid>
+
+                {/* Contact Information */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Contact Information
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Email Address</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.email || applicantsModal.selectedApplicant?.profile?.user?.email || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Phone Number</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.phoneNumber || applicantsModal.selectedApplicant?.profile?.user?.phoneNumber || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary">Address</Typography>
+                  <Typography variant="body1" sx={{ mb: 2, fontWeight: 500 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.address || applicantsModal.selectedApplicant?.profile?.user?.address || 'N/A'}
+                  </Typography>
+                </Grid>
+
+                {/* Social Links */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Social Links
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">LinkedIn Profile</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.linkedInProfile ? (
+                      <a 
+                        href={applicantsModal.selectedApplicant.profile.jobSeeker.linkedInProfile} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'underline' }}
+                      >
+                        View LinkedIn Profile
+                      </a>
+                    ) : 'Not provided'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Portfolio/GitHub</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.portfolioUrl ? (
+                      <a 
+                        href={applicantsModal.selectedApplicant.profile.jobSeeker.portfolioUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'underline' }}
+                      >
+                        View Portfolio
+                      </a>
+                    ) : 'Not provided'}
+                  </Typography>
+                </Grid>
+
+                {/* Professional Information */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Professional Information
+                  </Typography>
+                </Grid>
+                
+                {applicantsModal.selectedApplicant?.profile?.jobSeeker?.education && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Education</Typography>
+                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.education}
+                    </Typography>
+                  </Grid>
+                )}
+                
+                {applicantsModal.selectedApplicant?.profile?.jobSeeker?.workHistory && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Work History</Typography>
+                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.workHistory}
+                    </Typography>
+                  </Grid>
+                )}
+                
+                {applicantsModal.selectedApplicant?.profile?.jobSeeker?.skills && applicantsModal.selectedApplicant?.profile?.jobSeeker?.skills.length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Skills</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.skills.map((skill, index) => (
+                        <Chip key={index} label={skill} size="small" color="primary" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+                
+                {applicantsModal.selectedApplicant?.profile?.jobSeeker?.certifications && applicantsModal.selectedApplicant?.profile?.jobSeeker?.certifications.length > 0 && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Certifications</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.certifications.map((cert, index) => (
+                        <Chip key={index} label={cert} size="small" color="success" variant="outlined" />
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+
+                {/* Job Preferences */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Job Preferences
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Preferred Job Type</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.preferredJobType || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Preferred Location</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.preferredLocation || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Expected Salary</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.expectedSalary ? 
+                      `$${applicantsModal.selectedApplicant?.profile?.jobSeeker?.expectedSalary.toLocaleString()}` : 'N/A'
+                    }
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Availability</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.availability || 'N/A'}
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" color="text.secondary">Willing to Relocate</Typography>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {applicantsModal.selectedApplicant?.profile?.jobSeeker?.willingToRelocate ? 'Yes' : 'No'}
+                  </Typography>
+                </Grid>
+
+                {/* Professional Summary */}
+                {applicantsModal.selectedApplicant?.profile?.jobSeeker?.summary && (
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" color="text.secondary">Professional Summary</Typography>
+                    <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+                      {applicantsModal.selectedApplicant?.profile?.jobSeeker?.summary}
+                    </Typography>
+                  </Grid>
+                )}
+
+                {/* Documents Section */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                    Documents
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ 
+                    p: 2, 
+                    border: '1px solid', 
+                    borderColor: 'divider', 
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2
+                  }}>
+                    <Description color="primary" />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2">Resume</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {applicantsModal.selectedApplicant?.profile?.resumeDocumentId ? 'Available' : 'Not uploaded'}
+                      </Typography>
+                    </Box>
+                    {applicantsModal.selectedApplicant?.profile?.resumeDocumentId && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                          if (userId) handleDownloadResume(userId)
+                        }}
+                      >
+                        Download
+                      </Button>
+                    )}
+                  </Box>
+                </Grid>
+                
+                <Grid item xs={12} sm={6}>
+                  <Box sx={{ 
+                    p: 2, 
+                    border: '1px solid', 
+                    borderColor: 'divider', 
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2
+                  }}>
+                    <Description color="primary" />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="subtitle2">Cover Letter</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId ? 'Available' : 'Not uploaded'}
+                      </Typography>
+                    </Box>
+                    {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                          if (userId) handleDownloadCoverLetter(userId)
+                        }}
+                      >
+                        Download
+                      </Button>
+                    )}
+                  </Box>
+                </Grid>
+
+                {/* Document Actions */}
+                {(applicantsModal.selectedApplicant?.profile?.resumeDocumentId || applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId) && (
+                  <Grid item xs={12}>
+                    <Box sx={{ 
+                      mt: 2, 
+                      p: 2, 
+                      border: '1px solid', 
+                      borderColor: 'divider', 
+                      borderRadius: 2,
+                      backgroundColor: 'grey.50'
+                    }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                        Quick Actions
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        {applicantsModal.selectedApplicant?.profile?.resumeDocumentId && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<Description />}
+                            onClick={() => {
+                              const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                              if (userId) openDocumentInNewTab(userId, 'resume')
+                            }}
+                          >
+                            Open Resume
+                          </Button>
+                        )}
+                        {applicantsModal.selectedApplicant?.profile?.coverLetterDocumentId && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<Description />}
+                            onClick={() => {
+                              const userId = applicantsModal.selectedApplicant?.application?.userId || applicantsModal.selectedApplicant?.user?.id
+                              if (userId) openDocumentInNewTab(userId, 'coverLetter')
+                            }}
+                          >
+                            Open Cover Letter
+                          </Button>
+                        )}
+                       
+                      </Box>
+                    </Box>
+                  </Grid>
+                )}
+
+                {/* Document Content Display */}
+                {(documentContent.resume || documentContent.coverLetter) && (
+                  <Grid item xs={12}>
+                    <Box sx={{ 
+                      mt: 2, 
+                      p: 3, 
+                      border: '1px solid', 
+                      borderColor: 'primary.main', 
+                      borderRadius: 2,
+                      backgroundColor: 'background.paper'
+                    }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: 'primary.main' }}>
+                        Document Content
+                      </Typography>
+                      
+                      {documentContent.loading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                          <CircularProgress size={24} />
+                          <Typography variant="body2" sx={{ ml: 1 }}>
+                            Loading document...
+                          </Typography>
+                        </Box>
+                      ) : documentContent.error ? (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                          {documentContent.error}
+                        </Alert>
+                      ) : (
+                        <Box>
+                          {documentContent.resume && (
+                            <Box sx={{ mb: 3 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                                Resume Content:
+                              </Typography>
+                              <Box sx={{ 
+                                p: 2, 
+                                border: '1px solid', 
+                                borderColor: 'divider', 
+                                borderRadius: 1,
+                                backgroundColor: 'grey.50',
+                                maxHeight: '300px',
+                                overflow: 'auto'
+                              }}>
+                                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                                  {documentContent.resume}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          )}
+                          
+                          {documentContent.coverLetter && (
+                            <Box>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1, color: 'primary.main' }}>
+                                Cover Letter Content:
+                              </Typography>
+                              <Box sx={{ 
+                                p: 2, 
+                                border: '1px solid', 
+                                borderColor: 'divider', 
+                                borderRadius: 1,
+                                backgroundColor: 'grey.50',
+                                maxHeight: '300px',
+                                overflow: 'auto'
+                              }}>
+                                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                                  {documentContent.coverLetter}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+                      
+                      <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setDocumentContent({ resume: null, coverLetter: null, loading: false, error: null })}
+                        >
+                          Clear
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+            </Box>
+          ) : (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                Applicant details not available.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApplicantsModal(prev => ({ ...prev, selectedApplicant: null }))}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rejection Reason Modal */}
+      <Dialog
+        open={rejectionModal.open}
+        onClose={() => setRejectionModal({ open: false, applicationId: null, rejectReason: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Rejection Reason
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Please provide a reason for rejecting this application
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <TextField
+            fullWidth
+            multiline
+            rows={4}
+            label="Rejection Reason"
+            placeholder="Please provide a detailed reason for rejecting this application..."
+            value={rejectionModal.rejectReason}
+            onChange={(e) => setRejectionModal(prev => ({ ...prev, rejectReason: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setRejectionModal({ open: false, applicationId: null, rejectReason: '' })}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            color="error"
+            onClick={handleRejectionWithReason}
+            disabled={!rejectionModal.rejectReason.trim()}
+          >
+            Reject Application
           </Button>
         </DialogActions>
       </Dialog>
@@ -2607,6 +4086,12 @@ function MyCompany() {
   const [companyData, setCompanyData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
+  const [stats, setStats] = useState({
+    activeJobs: 0,
+    totalApplications: 0
+  })
+  const [saveLoading, setSaveLoading] = useState(false)
+  const [message, setMessage] = useState('')
   const [formData, setFormData] = useState({
     companyName: '',
     industry: '',
@@ -2623,20 +4108,119 @@ function MyCompany() {
     culture: ''
   })
 
-  // Removed loadCompanyData to avoid 404 errors
+  // Load employer profile data and stats
+  useEffect(() => {
+    const loadCompanyData = async () => {
+      try {
+        setLoading(true)
+        
+        // Load employer profile
+        const response = await employerAPI.getMyProfile()
+        console.log('Employer profile response:', response)
+        
+        if (response) {
+          setCompanyData(response)
+          // Update form data with existing values
+          setFormData({
+            companyName: response.companyName || response.company?.name || '',
+            industry: response.industry || '',
+            companySize: response.companySize || '',
+            website: response.website || '',
+            description: response.description || '',
+            streetAddress: response.streetAddress || response.address?.street || '',
+            city: response.city || response.address?.city || '',
+            state: response.state || response.address?.state || '',
+            zipCode: response.zipCode || response.address?.zipCode || '',
+            phone: response.companyPhone || response.phone || '',
+            contactEmail: response.contactEmail || response.email || '',
+            benefits: response.benefits || '',
+            culture: response.culture || ''
+          })
+        }
+        
+        // Load stats
+        try {
+          const jobsResponse = await jobAPI.getEmployerJobs()
+          const activeJobs = jobsResponse.filter(job => job.status === 'ACTIVE').length
+          
+          // Get total applications by fetching applications for each job
+          let totalApplications = 0
+          for (const job of jobsResponse) {
+            try {
+              const jobApplications = await applicationAPI.getJobApplicationsWithUserDetails(job.id)
+              totalApplications += jobApplications.length
+            } catch (error) {
+              console.error(`Failed to load applications for job ${job.id}:`, error)
+            }
+          }
+          
+          setStats({
+            activeJobs,
+            totalApplications
+          })
+        } catch (statsError) {
+          console.error('Failed to load stats:', statsError)
+          // Set default stats if loading fails
+          setStats({
+            activeJobs: 0,
+            totalApplications: 0
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load company data:', error)
+        // If profile doesn't exist, that's okay - user can create one
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadCompanyData()
+  }, [])
 
   const handleSave = async () => {
     try {
-      // Save company data to database
-      await userAPI.updateProfile({ company: formData })
-      setEditMode(false)
-      // Reload data
-      const response = await userAPI.getUserById(roleUtils.getCurrentUser()?.id)
-      if (response?.company) {
-        setCompanyData(response.company)
+      setSaveLoading(true)
+      setMessage('')
+      
+      // Merge existing personal data with new company data to prevent data loss
+      const updateData = {
+        // Company information
+        companyName: formData.companyName,
+        industry: formData.industry,
+        companySize: formData.companySize,
+        website: formData.website,
+        description: formData.description,
+        streetAddress: formData.streetAddress,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        companyPhone: formData.phone,
+        contactEmail: formData.contactEmail,
+        benefits: formData.benefits,
+        culture: formData.culture,
+        
+        // Preserve existing personal data
+        fullName: companyData?.fullName || '',
+        email: companyData?.email || '',
+        phone: companyData?.phone || companyData?.phoneNumber || '',
+        jobPosition: companyData?.jobPosition || companyData?.position || '',
+        department: companyData?.department || '',
+        profilePicture: companyData?.profilePicture || null
       }
+      
+      console.log('Sending company update data:', updateData)
+      
+      const response = await employerAPI.updateProfile(updateData)
+      setCompanyData(response)
+      setEditMode(false)
+      setMessage('Company profile updated successfully!')
+      
+      console.log('Company profile updated successfully:', response)
     } catch (error) {
       console.error('Failed to save company data:', error)
+      setMessage('Failed to update company profile. Please try again.')
+    } finally {
+      setSaveLoading(false)
     }
   }
 
@@ -2656,11 +4240,24 @@ function MyCompany() {
         My Company
       </AnimatedTypography>
 
-      {!companyData ? (
+      {message && (
+        <AnimatedBox animation="fadeInUp" delay={0.1} sx={{ mb: 3 }}>
+          <Alert severity={message.includes('successfully') ? 'success' : 'error'} onClose={() => setMessage('')}>
+            {message}
+          </Alert>
+        </AnimatedBox>
+      )}
+
+      {/* Debug button for company data */}
+      <AnimatedBox animation="fadeInUp" delay={0.1} sx={{ mb: 3 }}>
+    
+      </AnimatedBox>
+
+      {!companyData && !loading && !editMode ? (
         <AnimatedBox animation="fadeInUp" delay={0.3}>
           <DashboardCard sx={{ p: 4, textAlign: 'center' }}>
             <Business sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="h6" sx={{ mb: 2 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
               No Company Profile Found
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
@@ -2690,7 +4287,7 @@ function MyCompany() {
                     onClick={() => setEditMode(!editMode)}
                     startIcon={editMode ? <Visibility /> : <Edit />}
                   >
-                    {editMode ? 'Cancel' : 'Edit Profile'}
+                    {editMode ? 'Cancel' : 'Edit Company Profile'}
                   </Button>
                 </Box>
 
@@ -2747,6 +4344,96 @@ function MyCompany() {
                       sx={{ mb: 2 }}
                     />
                   </Grid>
+                  
+                  {/* Address Fields */}
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Street Address"
+                      value={formData.streetAddress}
+                      onChange={(e) => setFormData(prev => ({ ...prev, streetAddress: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="City"
+                      value={formData.city}
+                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="State"
+                      value={formData.state}
+                      onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="ZIP Code"
+                      value={formData.zipCode}
+                      onChange={(e) => setFormData(prev => ({ ...prev, zipCode: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Contact Fields */}
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Company Phone"
+                      value={formData.phone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Contact Email"
+                      value={formData.contactEmail}
+                      onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Additional Fields */}
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Benefits"
+                      value={formData.benefits}
+                      onChange={(e) => setFormData(prev => ({ ...prev, benefits: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={3}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Culture"
+                      value={formData.culture}
+                      onChange={(e) => setFormData(prev => ({ ...prev, culture: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={3}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
                 </Grid>
 
                 {editMode && (
@@ -2754,9 +4441,10 @@ function MyCompany() {
                     <Button
                       variant="contained"
                       onClick={handleSave}
+                      disabled={saveLoading}
                       sx={{ px: 4, py: 1.5 }}
                     >
-                      Save Changes
+                      {saveLoading ? 'Saving...' : 'Save Changes'}
                     </Button>
                   </Box>
                 )}
@@ -2811,17 +4499,20 @@ function MyCompany() {
     </PageContainer>
   )
 }
-
 // My Profile Component
 function MyProfile() {
   const [userData, setUserData] = useState(null)
+  const [companyData, setCompanyData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
+  const [saveLoading, setSaveLoading] = useState(false)
+  const [message, setMessage] = useState('')
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
     jobPosition: '',
+    department: '',
     profilePicture: null
   })
 
@@ -2829,21 +4520,53 @@ function MyProfile() {
     const loadUserData = async () => {
       try {
         setLoading(true)
-  const currentUser = roleUtils.getCurrentUser()
-        if (currentUser?.id) {
-          const response = await userAPI.getUserById(currentUser.id)
+        setMessage('')
+        
+        // Load employer profile data
+        const response = await employerAPI.getMyProfile()
+        console.log('Employer profile response:', response)
+        
+        if (response) {
           setUserData(response)
+          setCompanyData(response)
+          
+          // Populate form data with existing values - handle different possible data structures
+          const firstName = response.firstName || response.user?.firstName || ''
+          const lastName = response.lastName || response.user?.lastName || ''
+          const fullName = response.fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || ''
+          
           setFormData({
-            fullName: response.fullName || '',
-            email: response.email || '',
-            phone: response.phone || '',
-            jobPosition: response.jobPosition || '',
-            profilePicture: response.profilePicture || null
+            fullName: fullName,
+            email: response.email || response.user?.email || '',
+            phone: response.phone || response.phoneNumber || response.user?.phone || '',
+            jobPosition: response.jobPosition || response.position || response.title || '',
+            department: response.department || '',
+            profilePicture: response.profilePicture || response.user?.profilePicture || null
           })
+        } else {
+          // If no employer profile, try to load basic user data
+          try {
+            const userResponse = await userAPI.getUserById('current') // or get current user data
+            console.log('User data response:', userResponse)
+            if (userResponse) {
+              setUserData(userResponse)
+              setFormData({
+                fullName: userResponse.fullName || `${userResponse.firstName || ''} ${userResponse.lastName || ''}`.trim(),
+                email: userResponse.email || '',
+                phone: userResponse.phone || userResponse.phoneNumber || '',
+                jobPosition: userResponse.jobPosition || userResponse.position || '',
+                department: userResponse.department || '',
+                profilePicture: userResponse.profilePicture || null
+              })
+            }
+          } catch (userError) {
+            console.error('Failed to load user data:', userError)
+          }
         }
       } catch (error) {
-        console.error('Failed to load user data:', error)
+        console.error('Failed to load employer profile data:', error)
         setUserData(null)
+        setMessage('Failed to load profile data. Please try again.')
       } finally {
         setLoading(false)
       }
@@ -2854,16 +4577,86 @@ function MyProfile() {
 
   const handleSave = async () => {
     try {
-      await userAPI.updateProfile(formData)
-      setEditMode(false)
-      // Reload data
-      const currentUser = roleUtils.getCurrentUser()
-      if (currentUser?.id) {
-        const response = await userAPI.getUserById(currentUser.id)
-        setUserData(response)
+      setSaveLoading(true)
+      setMessage('')
+      
+      // Merge existing data with new form data to prevent data loss
+      const updateData = {
+        // Personal information
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        jobPosition: formData.jobPosition,
+        department: formData.department,
+        profilePicture: formData.profilePicture,
+        
+        // Preserve existing company data
+        companyName: companyData?.companyName || userData?.companyName || '',
+        industry: companyData?.industry || '',
+        companySize: companyData?.companySize || '',
+        website: companyData?.website || '',
+        description: companyData?.description || '',
+        streetAddress: companyData?.streetAddress || '',
+        city: companyData?.city || '',
+        state: companyData?.state || '',
+        zipCode: companyData?.zipCode || '',
+        companyPhone: companyData?.companyPhone || companyData?.phone || '',
+        contactEmail: companyData?.contactEmail || '',
+        benefits: companyData?.benefits || '',
+        culture: companyData?.culture || ''
       }
+      
+      console.log('Sending update data:', updateData)
+      
+      const response = await employerAPI.updateProfile(updateData)
+      setUserData(response)
+      setCompanyData(response)
+      setEditMode(false)
+      setMessage('Profile updated successfully!')
+      
+      console.log('Profile updated successfully:', response)
     } catch (error) {
       console.error('Failed to save profile data:', error)
+      setMessage('Failed to update profile. Please try again.')
+    } finally {
+      setSaveLoading(false)
+    }
+  }
+
+  const handleRefreshData = async () => {
+    try {
+      setLoading(true)
+      setMessage('')
+      
+      // Reload data
+      const response = await employerAPI.getMyProfile()
+      console.log('Refreshed employer profile response:', response)
+      
+      if (response) {
+        setUserData(response)
+        setCompanyData(response)
+        
+        // Update form data
+        const firstName = response.firstName || response.user?.firstName || ''
+        const lastName = response.lastName || response.user?.lastName || ''
+        const fullName = response.fullName || (firstName && lastName ? `${firstName} ${lastName}` : '') || ''
+        
+        setFormData({
+          fullName: fullName,
+          email: response.email || response.user?.email || '',
+          phone: response.phone || response.phoneNumber || response.user?.phone || '',
+          jobPosition: response.jobPosition || response.position || response.title || '',
+          department: response.department || '',
+          profilePicture: response.profilePicture || response.user?.profilePicture || null
+        })
+        
+        setMessage('Data refreshed successfully!')
+      }
+    } catch (error) {
+      console.error('Failed to refresh data:', error)
+      setMessage('Failed to refresh data. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -2882,6 +4675,17 @@ function MyProfile() {
       <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700 }}>
         My Profile
       </AnimatedTypography>
+
+      {message && (
+        <AnimatedBox animation="fadeInUp" delay={0.1} sx={{ mb: 3 }}>
+          <Alert severity={message.includes('successfully') ? 'success' : 'error'} onClose={() => setMessage('')}>
+            {message}
+          </Alert>
+        </AnimatedBox>
+      )}
+
+      {/* Debug buttons - remove these in production */}
+     
 
       <Grid container spacing={4}>
         {/* Personal Information */}
@@ -2934,9 +4738,10 @@ function MyProfile() {
                   <TextField
                     fullWidth
                     label="Full Name"
-                    value={formData.fullName}
+                    value={formData.fullName || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
                     disabled={!editMode}
+                    placeholder={editMode ? "Enter your full name" : "No name provided"}
                     sx={{ mb: 2 }}
                   />
                 </Grid>
@@ -2945,9 +4750,10 @@ function MyProfile() {
                   <TextField
                     fullWidth
                     label="Email Address"
-                    value={formData.email}
+                    value={formData.email || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     disabled={!editMode}
+                    placeholder={editMode ? "Enter your email address" : "No email provided"}
                     sx={{ mb: 2 }}
                   />
                 </Grid>
@@ -2956,9 +4762,10 @@ function MyProfile() {
                   <TextField
                     fullWidth
                     label="Phone Number"
-                    value={formData.phone}
+                    value={formData.phone || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                     disabled={!editMode}
+                    placeholder={editMode ? "Enter your phone number" : "No phone provided"}
                     sx={{ mb: 2 }}
                   />
                 </Grid>
@@ -2967,9 +4774,22 @@ function MyProfile() {
                   <TextField
                     fullWidth
                     label="Job Position"
-                    value={formData.jobPosition}
+                    value={formData.jobPosition || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, jobPosition: e.target.value }))}
                     disabled={!editMode}
+                    placeholder={editMode ? "Enter your job position" : "No position specified"}
+                    sx={{ mb: 2 }}
+                  />
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Department"
+                    value={formData.department || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+                    disabled={!editMode}
+                    placeholder={editMode ? "Enter your department" : "No department specified"}
                     sx={{ mb: 2 }}
                   />
                 </Grid>
@@ -2980,9 +4800,10 @@ function MyProfile() {
                   <Button
                     variant="contained"
                     onClick={handleSave}
+                    disabled={saveLoading}
                     sx={{ px: 4, py: 1.5 }}
                   >
-                    Save Changes
+                    {saveLoading ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </Box>
               )}
@@ -2999,23 +4820,23 @@ function MyProfile() {
               </Typography>
               
               <Stack spacing={2}>
-            <Box>
+                <Box>
                   <Typography variant="body2" color="text.secondary">
                     Company Name
-              </Typography>
+                  </Typography>
                   <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {userData?.company?.name || 'Not specified'}
+                    {companyData?.companyName || userData?.companyName || companyData?.company?.name || userData?.company?.name || 'Not specified'}
                   </Typography>
                 </Box>
                 
                 <Box>
-              <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary">
                     Department
-              </Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {userData?.department || 'Not specified'}
                   </Typography>
-            </Box>
+                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    {formData.department || companyData?.department || userData?.department || 'Not specified'}
+                  </Typography>
+                </Box>
                 
                 <Alert severity="info" sx={{ mt: 2 }}>
                   To update company information, visit the Company Profile page.
@@ -3126,7 +4947,6 @@ function MyProfile() {
     </PageContainer>
   )
 }
-
 // Main Employer Dashboard Component
 export default function EmployerDashboard() {
   const [mobileOpen, setMobileOpen] = useState(false)

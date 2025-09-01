@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.http.ResponseEntity;
@@ -21,10 +23,12 @@ import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wits.project.model.ProgramDocument;
 import com.wits.project.model.User;
+import com.wits.project.model.JobSeeker;
 import com.wits.project.model.enums.Enums.DocumentStatus;
 import com.wits.project.model.enums.Enums.ProgramType;
 import com.wits.project.repository.ProgramDocumentRepository;
 import com.wits.project.service.UserService;
+import com.wits.project.service.JobSeekerService;
 import com.wits.project.web.dto.UserDtos.RegisterRequest;
 import com.wits.project.web.dto.UserDtos.ProfileUpdateRequest;
 import com.wits.project.web.dto.UserDtos.UserResponse;
@@ -36,7 +40,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class UserController {
     private final UserService userService;
+    private final JobSeekerService jobSeekerService;
     private final ProgramDocumentRepository documentRepository;
+    private final ProgramDocumentRepository programDocumentRepository;
 
     @PostMapping("/register")
     public ResponseEntity<UserResponse> register(@RequestBody RegisterRequest req) {
@@ -163,6 +169,70 @@ public class UserController {
                 "lastName", u.getLastName()
             )).collect(Collectors.toList())
         );
+    }
+
+    @GetMapping("/{userId}/profile")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Map<String, Object>> getUserProfileById(@PathVariable String userId) {
+        try {
+            System.out.println("DEBUG: Fetching profile for user ID: " + userId);
+            
+            // First check if user exists
+            Optional<User> userOpt = userService.findById(userId);
+            if (userOpt.isEmpty()) {
+                System.out.println("DEBUG: User not found with ID: " + userId);
+                return ResponseEntity.notFound().build();
+            }
+            
+            User user = userOpt.get();
+            System.out.println("DEBUG: Found user: " + user.getFirstName() + " " + user.getLastName());
+            
+            // Get job seeker profile (this contains all the applicant information)
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            if (jobSeekerOpt.isEmpty()) {
+                System.out.println("DEBUG: JobSeeker profile not found for user ID: " + userId);
+                // Return user data even if job seeker profile doesn't exist
+                Map<String, Object> response = new HashMap<>();
+                response.put("user", user);
+                response.put("jobSeeker", null);
+                response.put("resumeDocument", null);
+                response.put("coverLetterDocument", null);
+                return ResponseEntity.ok(response);
+            }
+            
+            JobSeeker jobSeeker = jobSeekerOpt.get();
+            System.out.println("DEBUG: Found JobSeeker profile for user: " + jobSeeker.getFirstName() + " " + jobSeeker.getLastName());
+            
+            // Get documents from ProgramDocument collection
+            List<ProgramDocument> documents = programDocumentRepository.findByUserId(userId);
+            System.out.println("DEBUG: Found " + documents.size() + " documents for user ID: " + userId);
+            
+            // Find resume and cover letter documents
+            Optional<ProgramDocument> resumeDoc = documents.stream()
+                .filter(doc -> "RESUME".equals(doc.getProgramType().toString()) || 
+                              "Resume".equals(doc.getDescription()))
+                .findFirst();
+                
+            Optional<ProgramDocument> coverLetterDoc = documents.stream()
+                .filter(doc -> "COVER_LETTER".equals(doc.getProgramType().toString()) || 
+                              "Cover Letter".equals(doc.getDescription()))
+                .findFirst();
+            
+            System.out.println("DEBUG: Resume document found: " + resumeDoc.isPresent());
+            System.out.println("DEBUG: Cover letter document found: " + coverLetterDoc.isPresent());
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("user", user);
+            response.put("jobSeeker", jobSeeker);
+            response.put("resumeDocument", resumeDoc.orElse(null));
+            response.put("coverLetterDocument", coverLetterDoc.orElse(null));
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            System.out.println("DEBUG: Error fetching profile for user ID " + userId + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }
 

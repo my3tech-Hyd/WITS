@@ -49,5 +49,3 @@ public class DocumentController {
         return ResponseEntity.ok(docs.findAll());
     }
 }
-
-

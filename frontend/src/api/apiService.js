@@ -66,6 +66,40 @@ export const userAPI = {
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to get users')
     }
+  },
+
+  // Get complete user profile by ID (for employers viewing job seekers)
+  getUserProfileById: async (userId) => {
+    try {
+      const response = await api.get(`/users/${userId}/profile`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get user profile')
+    }
+  },
+
+  // Download resume for a specific user (employer access)
+  downloadResume: async (userId) => {
+    try {
+      const response = await api.get(`/jobseekers/profile/resume/download/employer?userId=${userId}`, {
+        responseType: 'blob'
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to download resume')
+    }
+  },
+
+  // Download cover letter for a specific user (employer access)
+  downloadCoverLetter: async (userId) => {
+    try {
+      const response = await api.get(`/jobseekers/profile/cover-letter/download/employer?userId=${userId}`, {
+        responseType: 'blob'
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to download cover letter')
+    }
   }
 }
 
@@ -219,9 +253,13 @@ export const applicationAPI = {
   // Get enriched applications for a specific job (employer) - with complete user details
   getJobApplicationsWithUserDetails: async (jobPostingId) => {
     try {
+      console.log('🔍 API Call: Getting applications for job posting ID:', jobPostingId)
       const response = await api.get(`/applications/job/${jobPostingId}/enriched`)
+      console.log('✅ API Response:', response.data)
       return response.data
     } catch (error) {
+      console.error('❌ API Error:', error)
+      console.error('❌ Error response:', error.response?.data)
       throw new Error(error.response?.data?.message || 'Failed to get job applications with user details')
     }
   },
@@ -237,12 +275,19 @@ export const applicationAPI = {
   },
 
   // Update application status (EMPLOYER, STAFF)
-  updateApplicationStatus: async (applicationId, status) => {
+  updateApplicationStatus: async (applicationId, status, rejectReason = null) => {
     try {
-      const response = await api.put('/applications/status', {
+      const requestBody = {
         applicationId,
         status
-      })
+      }
+      
+      // Add rejectReason if provided
+      if (rejectReason) {
+        requestBody.rejectReason = rejectReason
+      }
+      
+      const response = await api.put('/applications/status', requestBody)
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to update application status')
@@ -300,6 +345,7 @@ export const applicationAPI = {
   }
 }
 
+// Document API
 // Document API
 export const documentAPI = {
   // Upload document (JOB_SEEKER, STAFF)
@@ -447,8 +493,161 @@ export const roleBasedAPI = {
     }
     return apiCall
   }
-}
 
+}
+// Employer API
+export const employerAPI = {
+  // Get current user's employer profile
+  getMyProfile: async () => {
+    try {
+      const response = await api.get('/employers/profile')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get employer profile')
+    }
+  },
+
+  // Update employer profile
+  updateProfile: async (profileData) => {
+    try {
+      const response = await api.put('/employers/profile', profileData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update employer profile')
+    }
+  },
+
+  // Upload profile picture
+  uploadProfilePicture: async (file) => {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await api.post('/employers/profile/picture', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to upload profile picture')
+    }
+  },
+
+  // Upload company logo
+  uploadCompanyLogo: async (file) => {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await api.post('/employers/profile/logo', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to upload company logo')
+    }
+  },
+
+  // Search employers (for admin/staff)
+  searchEmployers: async (searchCriteria) => {
+    try {
+      const response = await api.get('/employers/search', { params: searchCriteria })
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to search employers')
+    }
+  },
+
+  // Get employer by ID (for admin/staff)
+  getEmployerById: async (id) => {
+    try {
+      const response = await api.get(`/employers/${id}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get employer')
+    }
+  },
+
+  // Get all verified employers
+  getVerifiedEmployers: async () => {
+    try {
+      const response = await api.get('/employers/verified')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get verified employers')
+    }
+  }
+}
+// JobSeeker API
+export const jobSeekerAPI = {
+  // Get current user's job seeker profile
+  getMyProfile: async () => {
+    try {
+      console.log('🔍 Attempting to get job seeker profile...')
+      const response = await api.get('/jobseekers/profile')
+      console.log('✅ Job seeker profile response:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('❌ Failed to get job seeker profile:', error.response?.status, error.response?.data)
+      throw error
+    }
+  },
+  
+  // Update current user's job seeker profile
+  updateProfile: async (profileData) => {
+    try {
+      console.log('🔍 Attempting to update job seeker profile...')
+      const response = await api.put('/jobseekers/profile', profileData)
+      console.log('✅ Job seeker profile updated:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('❌ Failed to update job seeker profile:', error.response?.status, error.response?.data)
+      throw new Error(error.response?.data?.message || 'Failed to update job seeker profile')
+    }
+  },
+  
+  // Upload resume
+  uploadResume: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/jobseekers/profile/resume', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+  
+  // Upload cover letter
+  uploadCoverLetter: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/jobseekers/profile/cover-letter', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+  
+  // Search job seekers (for employers)
+  searchJobSeekers: (params) => api.get('/jobseekers/search', { params }),
+  
+  // Get job seeker by ID (for employers)
+  getJobSeekerById: (id) => api.get(`/jobseekers/${id}`),
+  
+  // Link existing documents to job seeker profile
+  linkExistingDocuments: async () => {
+    try {
+      const response = await api.post('/jobseekers/profile/link-documents')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to link documents')
+    }
+  }
+}
+// Export all APIs
 // Export all APIs
 export default {
   auth: authAPI,
@@ -458,5 +657,7 @@ export default {
   document: documentAPI,
   home: homeAPI,
   roleUtils,
-  roleBasedAPI
+  roleBasedAPI,
+  jobSeekerAPI,
+  employerAPI
 }
