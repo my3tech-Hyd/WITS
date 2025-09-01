@@ -32,6 +32,8 @@ public class JobApplication extends BaseDocument {
     private ApplicationStatus status;
 
     private String notes;
+    
+    private String rejectReason; // Reason for rejection when status is REJECTED
 }
 
 

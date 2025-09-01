@@ -58,5 +58,3 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
         return new MongoTemplate(mongoClient(), getDatabaseName());
     }
 }
-
-

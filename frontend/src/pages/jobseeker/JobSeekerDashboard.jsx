@@ -30,7 +30,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  CircularProgress,
+  LinearProgress
 } from '@mui/material'
 import {
   Dashboard,
@@ -49,10 +51,14 @@ import {
   Add,
   Close,
   Event,
-  CheckCircle
+  CheckCircle,
+  Edit,
+  Refresh,
+  Star,
+  Flag
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
-import { jobAPI, applicationAPI, userAPI, roleUtils } from '../../api/apiService.js'
+import { jobAPI, applicationAPI, userAPI, roleUtils, jobSeekerAPI } from '../../api/apiService.js'
 import { 
   DashboardCard, 
   StatsCard, 
@@ -340,7 +346,384 @@ function DashboardHome({ setSelectedTab }) {
     </PageContainer>
   )
 }
+// My Company Component
+function MyCompany() {
+  const [companyData, setCompanyData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [editMode, setEditMode] = useState(false)
+  const [stats, setStats] = useState({
+    activeJobs: 0,
+    totalApplications: 0
+  })
+  const [formData, setFormData] = useState({
+    companyName: '',
+    industry: '',
+    companySize: '',
+    website: '',
+    description: '',
+    streetAddress: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    phone: '',
+    contactEmail: '',
+    benefits: '',
+    culture: ''
+  })
 
+  // Load employer profile data and stats
+  useEffect(() => {
+    const loadCompanyData = async () => {
+      try {
+        setLoading(true)
+        
+        // Load employer profile
+        const response = await employerAPI.getMyProfile()
+        console.log('Employer profile response:', response)
+        
+        if (response) {
+          setCompanyData(response)
+          // Update form data with existing values
+          setFormData({
+            companyName: response.companyName || '',
+            industry: response.industry || '',
+            companySize: response.companySize || '',
+            website: response.website || '',
+            description: response.description || '',
+            streetAddress: response.streetAddress || '',
+            city: response.city || '',
+            state: response.state || '',
+            zipCode: response.zipCode || '',
+            phone: response.companyPhone || '',
+            contactEmail: response.contactEmail || '',
+            benefits: response.benefits || '',
+            culture: response.culture || ''
+          })
+        }
+        
+        // Load stats
+        try {
+          const [jobsResponse, applicationsResponse] = await Promise.all([
+            jobAPI.getEmployerJobs(),
+            applicationAPI.getAllEmployerApplicationsWithDetails()
+          ])
+          
+          const activeJobs = jobsResponse.filter(job => job.status === 'ACTIVE').length
+          const totalApplications = applicationsResponse.length
+          
+          setStats({
+            activeJobs,
+            totalApplications
+          })
+        } catch (statsError) {
+          console.error('Failed to load stats:', statsError)
+          // Set default stats if loading fails
+          setStats({
+            activeJobs: 0,
+            totalApplications: 0
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load company data:', error)
+        // If profile doesn't exist, that's okay - user can create one
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadCompanyData()
+  }, [])
+
+  const handleSave = async () => {
+    try {
+      // Save company data using employer API
+      const updateData = {
+        companyName: formData.companyName,
+        industry: formData.industry,
+        companySize: formData.companySize,
+        website: formData.website,
+        description: formData.description,
+        streetAddress: formData.streetAddress,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        companyPhone: formData.phone,
+        contactEmail: formData.contactEmail,
+        benefits: formData.benefits,
+        culture: formData.culture
+      }
+      
+      const response = await employerAPI.updateProfile(updateData)
+      setCompanyData(response)
+      setEditMode(false)
+      
+      console.log('Company profile updated successfully:', response)
+    } catch (error) {
+      console.error('Failed to save company data:', error)
+    }
+  }
+
+  if (loading) {
+  return (
+      <PageContainer>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+          <CircularProgress />
+        </Box>
+      </PageContainer>
+    )
+  }
+
+  return (
+    <PageContainer>
+      <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700 }}>
+        My Company
+      </AnimatedTypography>
+
+      {!companyData ? (
+        <AnimatedBox animation="fadeInUp" delay={0.3}>
+          <DashboardCard sx={{ p: 4, textAlign: 'center' }}>
+            <Business sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
+          <Typography variant="h6" sx={{ mb: 2 }}>
+              No Company Profile Found
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              Create your company profile to start posting jobs and attracting talent.
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => setEditMode(true)}
+              sx={{ px: 4, py: 1.5 }}
+            >
+              Create Company Profile
+            </Button>
+          </DashboardCard>
+        </AnimatedBox>
+      ) : (
+        <Grid container spacing={4}>
+          {/* Company Information */}
+          <Grid item xs={12} md={8}>
+            <AnimatedBox animation="fadeInUp" delay={0.3}>
+              <DashboardCard sx={{ p: 4 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Company Information
+          </Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setEditMode(!editMode)}
+                    startIcon={editMode ? <Visibility /> : <Edit />}
+                  >
+                    {editMode ? 'Cancel' : 'Create Company Profile'}
+                  </Button>
+                </Box>
+
+                <Grid container spacing={3}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Company Name"
+                      value={formData.companyName}
+                      onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Industry"
+                      value={formData.industry}
+                      onChange={(e) => setFormData(prev => ({ ...prev, industry: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Company Size"
+                      value={formData.companySize}
+                      onChange={(e) => setFormData(prev => ({ ...prev, companySize: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Website"
+                      value={formData.website}
+                      onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Description"
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={4}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Address Fields */}
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Street Address"
+                      value={formData.streetAddress}
+                      onChange={(e) => setFormData(prev => ({ ...prev, streetAddress: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="City"
+                      value={formData.city}
+                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="State"
+                      value={formData.state}
+                      onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="ZIP Code"
+                      value={formData.zipCode}
+                      onChange={(e) => setFormData(prev => ({ ...prev, zipCode: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Contact Fields */}
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Company Phone"
+                      value={formData.phone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Contact Email"
+                      value={formData.contactEmail}
+                      onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+                      disabled={!editMode}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  
+                  {/* Additional Fields */}
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Benefits"
+                      value={formData.benefits}
+                      onChange={(e) => setFormData(prev => ({ ...prev, benefits: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={3}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Company Culture"
+                      value={formData.culture}
+                      onChange={(e) => setFormData(prev => ({ ...prev, culture: e.target.value }))}
+                      disabled={!editMode}
+                      multiline
+                      rows={3}
+                      sx={{ mb: 2 }}
+                    />
+                  </Grid>
+                </Grid>
+
+                {editMode && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+                    <Button
+                      variant="contained"
+                      onClick={handleSave}
+                      sx={{ px: 4, py: 1.5 }}
+                    >
+                      Save Changes
+                    </Button>
+                  </Box>
+                )}
+              </DashboardCard>
+            </AnimatedBox>
+          </Grid>
+
+          {/* Company Stats */}
+          <Grid item xs={12} md={4}>
+            <AnimatedBox animation="fadeInUp" delay={0.4}>
+              <DashboardCard sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
+                  Company Stats
+          </Typography>
+                
+                <Stack spacing={2}>
+                  <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'primary.light', borderRadius: 2 }}>
+                    <Work sx={{ fontSize: 32, color: 'primary.main', mb: 1 }} />
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                      {stats.activeJobs}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Active Jobs
+                    </Typography>
+    </Box>
+                  
+                  <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'success.light', borderRadius: 2 }}>
+                    <People sx={{ fontSize: 32, color: 'success.main', mb: 1 }} />
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'success.main' }}>
+                      {stats.totalApplications}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Total Applications
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ textAlign: 'center', p: 2, backgroundColor: 'info.light', borderRadius: 2 }}>
+                    <Visibility sx={{ fontSize: 32, color: 'info.main', mb: 1 }} />
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'info.main' }}>
+                      0
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Profile Views
+                    </Typography>
+                  </Box>
+                </Stack>
+              </DashboardCard>
+            </AnimatedBox>
+          </Grid>
+        </Grid>
+      )}
+    </PageContainer>
+  )
+}
 // My Profile Component
 function MyProfile() {
   const [form, setForm] = useState({ 
@@ -354,9 +737,17 @@ function MyProfile() {
     workHistory: '', 
     skills: [], 
     certifications: [],
-    veteranStatus: false, 
-    spouseStatus: false,
-    resourceReferralOptIn: false
+    veteran: false, 
+    spouse: false,
+    resourceReferralOptIn: false,
+    preferredJobType: '',
+    preferredLocation: '',
+    expectedSalary: '',
+    availability: 'Immediate',
+    willingToRelocate: false,
+    linkedInProfile: '',
+    portfolioUrl: '',
+    summary: ''
   })
   const [skillInput, setSkillInput] = useState('')
   const [certificationInput, setCertificationInput] = useState('')
@@ -365,7 +756,13 @@ function MyProfile() {
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState({})
   const currentUser = roleUtils.getCurrentUser()
+
+  // Load profile data on component mount
+  useEffect(() => {
+    loadProfile()
+  }, [])
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -373,6 +770,10 @@ function MyProfile() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }))
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }))
+    }
   }
 
   const addSkill = () => {
@@ -382,6 +783,9 @@ function MyProfile() {
         skills: [...prev.skills, skillInput.trim()]
       }))
       setSkillInput('')
+      if (errors.skills) {
+        setErrors(prev => ({ ...prev, skills: '' }))
+      }
     }
   }
 
@@ -411,59 +815,208 @@ function MyProfile() {
 
   const handleFileChange = (e, fileType) => {
     const file = e.target.files[0]
+    console.log(`📁 File selected for ${fileType}:`, file ? `${file.name} (${file.size} bytes, ${file.type})` : 'None')
+    
     if (file) {
+      // Validate file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        setErr('File size must be less than 10MB')
+        return
+      }
+      
+      // Validate file type
+      const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      if (!allowedTypes.includes(file.type)) {
+        setErr('Please upload only PDF or DOCX files')
+        return
+      }
+      
       if (fileType === 'resume') {
         setResumeFile(file)
+        console.log('✅ Resume file set in state')
       } else if (fileType === 'coverLetter') {
         setCoverLetterFile(file)
+        console.log('✅ Cover letter file set in state')
       }
+      setErr('') // Clear any previous errors
     }
+  }
+
+  const validateForm = () => {
+    const newErrors = {}
+
+    // Required fields
+    if (!form.firstName.trim()) newErrors.firstName = 'First name is required'
+    if (!form.lastName.trim()) newErrors.lastName = 'Last name is required'
+    if (!form.email.trim()) newErrors.email = 'Email is required'
+    if (!form.phoneNumber.trim()) newErrors.phoneNumber = 'Phone number is required'
+    if (!form.address.trim()) newErrors.address = 'Address is required'
+    if (!form.education.trim()) newErrors.education = 'Education is required'
+    if (!form.workHistory.trim()) newErrors.workHistory = 'Work history is required'
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (form.email && !emailRegex.test(form.email)) {
+      newErrors.email = 'Please enter a valid email address'
+    }
+
+    // Phone validation
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
+    if (form.phoneNumber && !phoneRegex.test(form.phoneNumber.replace(/\s/g, ''))) {
+      newErrors.phoneNumber = 'Please enter a valid phone number'
+    }
+
+    // Skills validation
+    if (!form.skills.length) newErrors.skills = 'At least one skill is required'
+
+    // LinkedIn URL validation
+    if (form.linkedInProfile && !form.linkedInProfile.includes('linkedin.com')) {
+      newErrors.linkedInProfile = 'Please enter a valid LinkedIn URL'
+    }
+
+    // Portfolio URL validation
+    if (form.portfolioUrl && !form.portfolioUrl.startsWith('http')) {
+      newErrors.portfolioUrl = 'Please enter a valid URL starting with http:// or https://'
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }
   
   const save = async () => {
+    if (!validateForm()) {
+      setErr('Please fix the validation errors before saving')
+      return
+    }
+
     setMsg('')
     setErr('')
     setLoading(true)
     
     try { 
-      // Create FormData for file uploads
-      const formData = new FormData()
+      console.log('🔄 Starting profile save process...')
+      console.log('📁 Resume file:', resumeFile ? `${resumeFile.name} (${resumeFile.size} bytes)` : 'None')
+      console.log('📁 Cover letter file:', coverLetterFile ? `${coverLetterFile.name} (${coverLetterFile.size} bytes)` : 'None')
       
-      // Add all form fields
-      Object.keys(form).forEach(key => {
-        if (key === 'skills' || key === 'certifications') {
-          formData.append(key, JSON.stringify(form[key]))
-        } else {
-          formData.append(key, form[key])
-        }
-      })
-
-      // Add files
+      // Upload files first if they exist
       if (resumeFile) {
-        formData.append('resume', resumeFile)
+        console.log('📤 Uploading resume file...')
+        const resumeResponse = await jobSeekerAPI.uploadResume(resumeFile)
+        console.log('✅ Resume upload response:', resumeResponse)
+        setMsg(prev => prev + ' Resume uploaded successfully. ')
       }
       if (coverLetterFile) {
-        formData.append('coverLetter', coverLetterFile)
+        console.log('📤 Uploading cover letter file...')
+        const coverLetterResponse = await jobSeekerAPI.uploadCoverLetter(coverLetterFile)
+        console.log('✅ Cover letter upload response:', coverLetterResponse)
+        setMsg(prev => prev + ' Cover letter uploaded successfully. ')
       }
 
-      // Debug: Log what's being sent
-      console.log('Sending profile data:', Object.fromEntries(formData.entries()))
-      console.log('Resume file:', resumeFile)
-      console.log('Cover letter file:', coverLetterFile)
+      // Update profile data
+      const profileData = {
+        ...form,
+        skills: form.skills,
+        certifications: form.certifications
+      }
 
-      await userAPI.updateProfile(formData)
+      console.log('📤 Sending profile data:', profileData)
+      const profileResponse = await jobSeekerAPI.updateProfile(profileData)
+      console.log('✅ Profile update response:', profileResponse)
+      
+      // Update the form with the response data to get the latest profile completion
+      if (profileResponse) {
+        setForm(prev => ({
+          ...prev,
+          profileCompletionPercent: profileResponse.profileCompletionPercent || prev.profileCompletionPercent
+        }))
+      }
+      
       setMsg('Profile updated successfully') 
+      
+      // Clear file inputs after successful save
+      setResumeFile(null)
+      setCoverLetterFile(null)
+      
+      // Refresh profile data to get the latest information
+      setTimeout(() => {
+        loadProfile()
+      }, 1000)
+      
     } catch (ex) { 
-      console.error('Profile update error:', ex)
+      console.error('❌ Profile update error:', ex)
+      console.error('❌ Error details:', ex.response?.data)
       setErr(ex.response?.data?.message || ex.message) 
     } finally {
       setLoading(false)
     }
   }
 
+  // Function to reload profile data
+  const loadProfile = async () => {
+    try {
+      console.log('🔍 Loading JobSeeker profile...')
+      const response = await jobSeekerAPI.getMyProfile()
+      console.log('✅ JobSeeker profile loaded:', response)
+      
+      if (response) {
+        setForm(prev => ({
+          ...prev,
+          firstName: response.firstName || '',
+          lastName: response.lastName || '',
+          dateOfBirth: response.dateOfBirth || '',
+          email: response.email || '',
+          phoneNumber: response.phoneNumber || '',
+          address: response.address || '',
+          education: response.education || '',
+          workHistory: response.workHistory || '',
+          skills: response.skills || [],
+          certifications: response.certifications || [],
+          veteran: response.veteran || false,
+          spouse: response.spouse || false,
+          resourceReferralOptIn: response.resourceReferralOptIn || false,
+          preferredJobType: response.preferredJobType || '',
+          preferredLocation: response.preferredLocation || '',
+          expectedSalary: response.expectedSalary || '',
+          availability: response.availability || 'Immediate',
+          willingToRelocate: response.willingToRelocate || false,
+          linkedInProfile: response.linkedInProfile || '',
+          portfolioUrl: response.portfolioUrl || '',
+          summary: response.summary || '',
+          profileCompletionPercent: response.profileCompletionPercent || 0
+        }))
+      }
+    } catch (error) {
+      console.error('Failed to load JobSeeker profile:', error)
+      // Try to load user data as fallback
+      try {
+        const userResponse = await userAPI.getCurrentUser()
+        if (userResponse) {
+          setForm(prev => ({
+            ...prev,
+            firstName: userResponse.firstName || '',
+            lastName: userResponse.lastName || '',
+            dateOfBirth: userResponse.dateOfBirth || '',
+            email: userResponse.email || '',
+            phoneNumber: userResponse.phoneNumber || '',
+            address: userResponse.address || '',
+            education: userResponse.education || '',
+            skills: userResponse.skills || [],
+            certifications: userResponse.certifications || [],
+            veteran: userResponse.veteran || false,
+            spouse: userResponse.spouse || false,
+            resourceReferralOptIn: userResponse.resourceReferralOptIn || false
+          }))
+        }
+      } catch (userError) {
+        console.error('Failed to load user data as fallback:', userError)
+        setErr('Failed to load profile data')
+      }
+    }
+  }
+
   return (
     <PageContainer>
-      <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700 }}>
+      <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700, color: 'primary.main' }}>
         My Profile
       </AnimatedTypography>
       
@@ -471,17 +1024,44 @@ function MyProfile() {
         <Grid item xs={12} md={4}>
           <AnimatedBox animation="fadeInUp" delay={0.3}>
             <DashboardCard>
-              <Box sx={{ textAlign: 'center' }}>
-                <Avatar sx={{ width: 100, height: 100, mx: 'auto', mb: 2, bgcolor: 'primary.main' }}>
-                  <Person sx={{ fontSize: 50 }} />
+              <Box sx={{ textAlign: 'center', p: 3 }}>
+                <Avatar sx={{ 
+                  width: 120, 
+                  height: 120, 
+                  mx: 'auto', 
+                  mb: 3, 
+                  bgcolor: 'primary.main',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                }}>
+                  <Person sx={{ fontSize: 60 }} />
                 </Avatar>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: 'primary.main' }}>
                   {currentUser.firstName} {currentUser.lastName}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
                   {currentUser.email}
                 </Typography>
-                <Chip label={currentUser.roles?.[0] || 'Job Seeker'} color="primary" />
+                <Chip 
+                  label={currentUser.roles?.[0] || 'Job Seeker'} 
+                  color="primary" 
+                  variant="filled"
+                  sx={{ fontWeight: 600, px: 2 }}
+                />
+                
+                {/* Profile Completion Progress */}
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                    Profile Completion
+                  </Typography>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={form.profileCompletionPercent || 0} 
+                    sx={{ height: 8, borderRadius: 4, mb: 1 }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    {form.profileCompletionPercent || 0}% Complete
+                  </Typography>
+                </Box>
               </Box>
             </DashboardCard>
           </AnimatedBox>
@@ -490,283 +1070,526 @@ function MyProfile() {
         <Grid item xs={12} md={8}>
           <AnimatedBox animation="fadeInUp" delay={0.4}>
             <DashboardCard>
-              <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                Profile Information
-              </Typography>
-              
-              {msg && <Alert severity="success" sx={{ mb: 2 }}>{msg}</Alert>}
-              {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
-              
-                            <Stack spacing={3}>
-                {/* Personal Information */}
-                <Typography variant="h6" sx={{ color: 'primary.main' }}>
-                  Personal Information
-                </Typography>
+              <Box sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, pb: 1, borderBottom: '2px solid', borderColor: 'primary.main' }}>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                    Profile Information
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={loadProfile}
+                    startIcon={<Refresh />}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    Refresh
+                  </Button>
+                </Box>
                 
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <TextField 
-                      fullWidth
-                      label="First Name" 
-                      name="firstName" 
-                      value={form.firstName} 
-                      onChange={onChange}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField 
-                      fullWidth
-                      label="Last Name" 
-                      name="lastName" 
-                      value={form.lastName} 
-                      onChange={onChange}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField 
-                      fullWidth
-                      type="date"
-                      label="Date of Birth" 
-                      name="dateOfBirth" 
-                      value={form.dateOfBirth} 
-                      onChange={onChange}
-                      InputLabelProps={{ shrink: true }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField 
-                      fullWidth
-                      label="Phone Number" 
-                      name="phoneNumber" 
-                      value={form.phoneNumber} 
-                      onChange={onChange}
-                    />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <TextField 
-                      fullWidth
-                      label="Address" 
-                      name="address" 
-                      value={form.address} 
-                      onChange={onChange}
-                      multiline
-                      rows={2}
-                    />
-                  </Grid>
-                </Grid>
+                {msg && <Alert severity="success" sx={{ mb: 3 }}>{msg}</Alert>}
+                {err && <Alert severity="error" sx={{ mb: 3 }}>{err}</Alert>}
+                
+                <Stack spacing={4}>
+                  {/* Personal Information */}
+                  <Box>
+                    <Typography variant="h6" sx={{ color: 'primary.main', mb: 3, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                      <Person sx={{ mr: 1 }} />
+                      Personal Information
+                    </Typography>
+                    
+                    <Grid container spacing={3}>
+                      <Grid item xs={12} sm={6}>
+                        <TextField 
+                          fullWidth
+                          label="First Name *" 
+                          name="firstName" 
+                          value={form.firstName} 
+                          onChange={onChange}
+                          error={!!errors.firstName}
+                          helperText={errors.firstName}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField 
+                          fullWidth
+                          label="Last Name *" 
+                          name="lastName" 
+                          value={form.lastName} 
+                          onChange={onChange}
+                          error={!!errors.lastName}
+                          helperText={errors.lastName}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField 
+                          fullWidth
+                          type="date"
+                          label="Date of Birth" 
+                          name="dateOfBirth" 
+                          value={form.dateOfBirth} 
+                          onChange={onChange}
+                          InputLabelProps={{ shrink: true }}
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField 
+                          fullWidth
+                          label="Phone Number *" 
+                          name="phoneNumber" 
+                          value={form.phoneNumber} 
+                          onChange={onChange}
+                          error={!!errors.phoneNumber}
+                          helperText={errors.phoneNumber}
+                          placeholder="+1 (555) 123-4567"
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12}>
+                        <TextField 
+                          fullWidth
+                          label="Address *" 
+                          name="address" 
+                          value={form.address} 
+                          onChange={onChange}
+                          error={!!errors.address}
+                          helperText={errors.address}
+                          multiline
+                          rows={2}
+                          placeholder="Enter your full address..."
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Box>
 
-                {/* Professional Information */}
-                <Typography variant="h6" sx={{ color: 'primary.main', mt: 2 }}>
-                  Professional Information
-                </Typography>
-                
-                <TextField 
-                  label="Education" 
-                  name="education" 
-                  value={form.education} 
-                  onChange={onChange}
-                  multiline
-                  rows={2}
-                  placeholder="List your educational background..."
-                />
-                
-                <TextField 
-                  label="Work History" 
-                  name="workHistory" 
-                  value={form.workHistory} 
-                  onChange={onChange} 
-                  multiline
+                  {/* Professional Information */}
+                  <Box>
+                    <Typography variant="h6" sx={{ color: 'primary.main', mb: 3, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                      <Work sx={{ mr: 1 }} />
+                      Professional Information
+                    </Typography>
+                    
+                    <Grid container spacing={3}>
+                      <Grid item xs={12}>
+                        <TextField 
+                          fullWidth
+                          label="Education *" 
+                          name="education" 
+                          value={form.education} 
+                          onChange={onChange}
+                          error={!!errors.education}
+                          helperText={errors.education}
+                          multiline
+                          rows={3}
+                          placeholder="List your educational background, degrees, institutions, and graduation dates..."
+                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12}>
+                        <TextField 
+                          fullWidth
+                          label="Work History *" 
+                          name="workHistory" 
+                          value={form.workHistory} 
+                          onChange={onChange}
+                          error={!!errors.workHistory}
+                          helperText={errors.workHistory}
+                          multiline
                   rows={4}
                   placeholder="Describe your work experience, responsibilities, and achievements..."
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                 />
-                
-                {/* Skills */}
-                <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Skills
-                  </Typography>
-                  <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                    <TextField
-                      label="Add Skill"
-                      value={skillInput}
-                      onChange={(e) => setSkillInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
-                      size="small"
-                      sx={{ flexGrow: 1 }}
-                      placeholder="e.g., JavaScript, React, Node.js"
-                    />
-                    <Button
-                      variant="outlined"
-                      onClick={addSkill}
-                      startIcon={<Add />}
-                      disabled={!skillInput.trim()}
-                    >
-                      Add
-                    </Button>
-                  </Stack>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {form.skills.map((skill, index) => (
-                      <Chip
-                        key={index}
-                        label={skill}
-                        onDelete={() => removeSkill(skill)}
-                        deleteIcon={<Close />}
-                        color="primary"
-                        variant="outlined"
-                      />
-                    ))}
-                  </Box>
-                </Box>
+              </Grid>
+            </Grid>
+          </Box>
 
-                {/* Certifications */}
-                <Box>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Certifications
-                  </Typography>
-                  <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                    <TextField
-                      label="Add Certification"
-                      value={certificationInput}
-                      onChange={(e) => setCertificationInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCertification())}
-                      size="small"
-                      sx={{ flexGrow: 1 }}
-                      placeholder="e.g., AWS Certified Solutions Architect"
-                    />
-                    <Button
-                      variant="outlined"
-                      onClick={addCertification}
-                      startIcon={<Add />}
-                      disabled={!certificationInput.trim()}
-                    >
-                      Add
-                    </Button>
-                  </Stack>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {form.certifications.map((cert, index) => (
-                      <Chip
-                        key={index}
-                        label={cert}
-                        onDelete={() => removeCertification(cert)}
-                        deleteIcon={<Close />}
-                        color="primary"
-                        variant="outlined"
-                      />
-                    ))}
-                  </Box>
-                </Box>
+          {/* Skills & Certifications */}
+          <Box>
+            <Typography variant="h6" sx={{ color: 'primary.main', mb: 3, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+              <Star sx={{ mr: 1 }} />
+              Skills & Certifications
+            </Typography>
+            
+            {/* Skills */}
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+                Skills *
+              </Typography>
+              <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                <TextField
+                  label="Add Skill"
+                  value={skillInput}
+                  onChange={(e) => setSkillInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
+                  size="medium"
+                  sx={{ flexGrow: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  placeholder="e.g., JavaScript, React, Node.js, Project Management"
+                  error={!!errors.skills}
+                  helperText={errors.skills}
+                />
+                <Button
+                  variant="contained"
+                  onClick={addSkill}
+                  startIcon={<Add />}
+                  disabled={!skillInput.trim()}
+                  sx={{ borderRadius: 2, px: 3 }}
+                >
+                  Add
+                </Button>
+              </Stack>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {form.skills.map((skill, index) => (
+                  <Chip
+                    key={index}
+                    label={skill}
+                    onDelete={() => removeSkill(skill)}
+                    deleteIcon={<Close />}
+                    color="primary"
+                    variant="filled"
+                    sx={{ borderRadius: 2 }}
+                  />
+                ))}
+              </Box>
+            </Box>
 
-                {/* Documents */}
-                <Typography variant="h6" sx={{ color: 'primary.main', mt: 2 }}>
-                  Documents
-                </Typography>
-                
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      startIcon={<CloudUpload />}
-                      fullWidth
-                      sx={{ py: 2 }}
-                    >
-                      Update Resume (PDF/DOCX, max 10MB)
-                      <input
-                        type="file"
-                        hidden
-                        accept=".pdf,.docx"
-                        onChange={(e) => handleFileChange(e, 'resume')}
-                      />
-                    </Button>
-                    {resumeFile && (
-                      <Typography variant="body2" sx={{ mt: 1, color: 'success.main' }}>
+            {/* Certifications */}
+            <Box>
+              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
+                Certifications
+              </Typography>
+              <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                <TextField
+                  label="Add Certification"
+                  value={certificationInput}
+                  onChange={(e) => setCertificationInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCertification())}
+                  size="medium"
+                  sx={{ flexGrow: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  placeholder="e.g., AWS Certified Solutions Architect, PMP, CISSP"
+                />
+                <Button
+                  variant="contained"
+                  onClick={addCertification}
+                  startIcon={<Add />}
+                  disabled={!certificationInput.trim()}
+                  sx={{ borderRadius: 2, px: 3 }}
+                >
+                  Add
+                </Button>
+              </Stack>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {form.certifications.map((cert, index) => (
+                  <Chip
+                    key={index}
+                    label={cert}
+                    onDelete={() => removeCertification(cert)}
+                    deleteIcon={<Close />}
+                    color="secondary"
+                    variant="filled"
+                    sx={{ borderRadius: 2 }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Documents */}
+          <Box>
+            <Typography variant="h6" sx={{ color: 'primary.main', mb: 3, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+              <CloudUpload sx={{ mr: 1 }} />
+              Documents
+            </Typography>
+            
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ 
+                  border: '2px dashed', 
+                  borderColor: 'primary.main', 
+                  borderRadius: 3, 
+                  p: 3, 
+                  textAlign: 'center',
+                  bgcolor: 'primary.50',
+                  transition: 'all 0.2s ease-in-out',
+                  '&:hover': {
+                    bgcolor: 'primary.100',
+                    transform: 'translateY(-2px)'
+                  }
+                }}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    startIcon={<CloudUpload />}
+                    fullWidth
+                    sx={{ py: 2, borderRadius: 2, borderColor: 'primary.main', color: 'primary.main' }}
+                  >
+                    Upload Resume (PDF/DOCX, max 10MB)
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pdf,.docx"
+                      onChange={(e) => handleFileChange(e, 'resume')}
+                    />
+                  </Button>
+                  {resumeFile && (
+                    <Box sx={{ mt: 2, p: 2, bgcolor: 'success.50', borderRadius: 2 }}>
+                      <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
                         ✓ {resumeFile.name}
                       </Typography>
-                    )}
-                  </Grid>
-                  
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      startIcon={<CloudUpload />}
-                      fullWidth
-                      sx={{ py: 2 }}
-                    >
-                      Update Cover Letter (Optional)
-                      <input
-                        type="file"
-                        hidden
-                        accept=".pdf,.docx"
-                        onChange={(e) => handleFileChange(e, 'coverLetter')}
-                      />
-                    </Button>
-                    {coverLetterFile && (
-                      <Typography variant="body2" sx={{ mt: 1, color: 'success.main' }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {(resumeFile.size / 1024 / 1024).toFixed(2)} MB
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ 
+                  border: '2px dashed', 
+                  borderColor: 'secondary.main', 
+                  borderRadius: 3, 
+                  p: 3, 
+                  textAlign: 'center',
+                  bgcolor: 'secondary.50',
+                  transition: 'all 0.2s ease-in-out',
+                  '&:hover': {
+                    bgcolor: 'secondary.100',
+                    transform: 'translateY(-2px)'
+                  }
+                }}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    startIcon={<CloudUpload />}
+                    fullWidth
+                    sx={{ py: 2, borderRadius: 2, borderColor: 'secondary.main', color: 'secondary.main' }}
+                  >
+                    Upload Cover Letter (Optional)
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pdf,.docx"
+                      onChange={(e) => handleFileChange(e, 'coverLetter')}
+                    />
+                  </Button>
+                  {coverLetterFile && (
+                    <Box sx={{ mt: 2, p: 2, bgcolor: 'success.50', borderRadius: 2 }}>
+                      <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
                         ✓ {coverLetterFile.name}
                       </Typography>
-                    )}
-                  </Grid>
-                </Grid>
+                      <Typography variant="caption" color="text.secondary">
+                        {(coverLetterFile.size / 1024 / 1024).toFixed(2)} MB
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Grid>
+            </Grid>
+          </Box>
 
-                {/* Status Information */}
-                <Typography variant="h6" sx={{ color: 'primary.main', mt: 2 }}>
-                  Status Information
-                </Typography>
-                
-                <Stack spacing={2}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        name="veteranStatus"
-                        checked={form.veteranStatus}
-                        onChange={onChange}
-                      />
-                    }
-                    label="I am a veteran"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        name="spouseStatus"
-                        checked={form.spouseStatus}
-                        onChange={onChange}
-                      />
-                    }
-                    label="I am a military spouse"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        name="resourceReferralOptIn"
-                        checked={form.resourceReferralOptIn}
-                        onChange={onChange}
-                      />
-                    }
-                    label="I would like to receive resource referrals and notifications"
-                  />
-                </Stack>
+          {/* Job Preferences */}
+          <Box>
+            <Typography variant="h6" sx={{ color: 'primary.main', mb: 3, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+              <Business sx={{ mr: 1 }} />
+              Job Preferences
+            </Typography>
+            
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6}>
+                <TextField 
+                  fullWidth
+                  label="Preferred Job Type" 
+                  name="preferredJobType" 
+                  value={form.preferredJobType} 
+                  onChange={onChange}
+                  placeholder="e.g., Full-time, Part-time, Contract"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField 
+                  fullWidth
+                  label="Preferred Location" 
+                  name="preferredLocation" 
+                  value={form.preferredLocation} 
+                  onChange={onChange}
+                  placeholder="e.g., Remote, New York, CA"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField 
+                  fullWidth
+                  type="number"
+                  label="Expected Salary ($)" 
+                  name="expectedSalary" 
+                  value={form.expectedSalary} 
+                  onChange={onChange}
+                  placeholder="e.g., 75000"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField 
+                  fullWidth
+                  label="Availability" 
+                  name="availability" 
+                  value={form.availability} 
+                  onChange={onChange}
+                  placeholder="e.g., Immediate, 2 weeks notice"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField 
+                  fullWidth
+                  label="LinkedIn Profile" 
+                  name="linkedInProfile" 
+                  value={form.linkedInProfile} 
+                  onChange={onChange}
+                  error={!!errors.linkedInProfile}
+                  helperText={errors.linkedInProfile}
+                  placeholder="https://linkedin.com/in/yourprofile"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField 
+                  fullWidth
+                  label="Portfolio URL" 
+                  name="portfolioUrl" 
+                  value={form.portfolioUrl} 
+                  onChange={onChange}
+                  error={!!errors.portfolioUrl}
+                  helperText={errors.portfolioUrl}
+                  placeholder="https://yourportfolio.com"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      name="willingToRelocate"
+                      checked={form.willingToRelocate}
+                      onChange={onChange}
+                      sx={{ '&.Mui-checked': { color: 'primary.main' } }}
+                    />
+                  }
+                  label="I am willing to relocate for the right opportunity"
+                  sx={{ '& .MuiFormControlLabel-label': { fontWeight: 500 } }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField 
+                  fullWidth
+                  label="Professional Summary" 
+                  name="summary" 
+                  value={form.summary} 
+                  onChange={onChange}
+                  multiline
+                  rows={4}
+                  placeholder="Brief professional summary and career objectives..."
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Grid>
+            </Grid>
+          </Box>
 
-                <PrimaryButton 
-                  onClick={save} 
-                  disabled={loading}
-                  sx={{ alignSelf: 'flex-start', mt: 2 }}
-                >
-                  {loading ? 'Saving...' : 'Save Profile'}
-                </PrimaryButton>
+          {/* Status Information */}
+          <Box>
+            <Typography variant="h6" sx={{ color: 'primary.main', mb: 3, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+              <Flag sx={{ mr: 1 }} />
+              Status Information
+            </Typography>
+            
+            <Box sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 3 }}>
+              <Stack spacing={2}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      name="veteran"
+                      checked={form.veteran}
+                      onChange={onChange}
+                      sx={{ '&.Mui-checked': { color: 'primary.main' } }}
+                    />
+                  }
+                  label="I am a veteran"
+                  sx={{ '& .MuiFormControlLabel-label': { fontWeight: 500 } }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      name="spouse"
+                      checked={form.spouse}
+                      onChange={onChange}
+                      sx={{ '&.Mui-checked': { color: 'primary.main' } }}
+                    />
+                  }
+                  label="I am a military spouse"
+                  sx={{ '& .MuiFormControlLabel-label': { fontWeight: 500 } }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      name="resourceReferralOptIn"
+                      checked={form.resourceReferralOptIn}
+                      onChange={onChange}
+                      sx={{ '&.Mui-checked': { color: 'primary.main' } }}
+                    />
+                  }
+                  label="I would like to receive resource referrals and notifications"
+                  sx={{ '& .MuiFormControlLabel-label': { fontWeight: 500 } }}
+                />
               </Stack>
-            </DashboardCard>
-          </AnimatedBox>
-        </Grid>
-      </Grid>
-    </PageContainer>
-  )
+            </Box>
+          </Box>
+
+          {/* Save Button */}
+          <Box sx={{ mt: 4, textAlign: 'center' }}>
+            <PrimaryButton 
+              onClick={save} 
+              disabled={loading}
+              sx={{ 
+                px: 6, 
+                py: 2, 
+                borderRadius: 3, 
+                fontSize: '1.1rem',
+                fontWeight: 600,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.2)'
+                }
+              }}
+            >
+              {loading ? (
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <CircularProgress size={20} sx={{ mr: 1, color: 'white' }} />
+                  Saving Profile...
+                </Box>
+              ) : (
+                'Save Profile'
+              )}
+            </PrimaryButton>
+          </Box>
+        </Stack>
+      </Box>
+    </DashboardCard>
+  </AnimatedBox>
+</Grid>
+</Grid>
+</PageContainer>
+)
 }
 
 // My Applications Component
 function MyApplications() {
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
+  const [jobDetailsModal, setJobDetailsModal] = useState({ open: false, job: null })
 
   useEffect(() => {
     const loadApplications = async () => {
@@ -803,6 +1626,10 @@ function MyApplications() {
       day: 'numeric', 
       year: 'numeric' 
     })
+  }
+
+  const handleViewJobDetails = (application) => {
+    setJobDetailsModal({ open: true, job: application })
   }
 
   return (
@@ -864,7 +1691,19 @@ function MyApplications() {
                           </Typography>
                         </Stack>
                       </Box>
-                      <IconButton size="small" title="View Details" sx={{ color: 'primary.main' }}>
+                      <IconButton 
+                        size="small" 
+                        title="View Job Details" 
+                        onClick={() => handleViewJobDetails(app)}
+                        sx={{ 
+                          color: 'primary.main',
+                          '&:hover': {
+                            backgroundColor: 'primary.light',
+                            transform: 'scale(1.1)',
+                            transition: 'all 0.2s ease'
+                          }
+                        }}
+                      >
                         <Visibility />
                       </IconButton>
                     </Stack>
@@ -875,6 +1714,482 @@ function MyApplications() {
           )}
         </DashboardCard>
       </AnimatedBox>
+
+      {/* Job Details Modal */}
+      <Dialog
+        open={jobDetailsModal.open}
+        onClose={() => setJobDetailsModal({ open: false, job: null })}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          pb: 3, 
+          background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+          color: 'white',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <Box sx={{ 
+            position: 'absolute', 
+            top: 0, 
+            right: 0, 
+            width: '100px', 
+            height: '100px', 
+            background: 'rgba(255, 255, 255, 0.1)', 
+            borderRadius: '50%', 
+            transform: 'translate(30px, -30px)' 
+          }} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                Job Details
+              </Typography>
+              <Typography variant="body1" sx={{ opacity: 0.9, fontWeight: 500 }}>
+                {jobDetailsModal.job?.jobTitle || 'Job Title'}
+              </Typography>
+            </Box>
+            <Chip 
+              label={jobDetailsModal.job?.application?.status || 'Applied'} 
+              color={getStatusColor(jobDetailsModal.job?.application?.status)}
+              size="medium"
+              sx={{ 
+                fontWeight: 600, 
+                px: 3, 
+                py: 1,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                '& .MuiChip-label': {
+                  color: 'white'
+                }
+              }}
+            />
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 4, pb: 2 }}>
+          {jobDetailsModal.job && (
+            <Box>
+              {/* Hero Section */}
+              <Box sx={{ 
+                mb: 4, 
+                p: 4, 
+                background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+                borderRadius: 4,
+                border: '1px solid',
+                borderColor: 'divider',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                <Box sx={{ 
+                  position: 'absolute', 
+                  top: -20, 
+                  right: -20, 
+                  width: '120px', 
+                  height: '120px', 
+                  background: 'linear-gradient(45deg, #1976d2, #42a5f5)', 
+                  borderRadius: '50%', 
+                  opacity: 0.1 
+                }} />
+                <Typography variant="h3" sx={{ 
+                  fontWeight: 800, 
+                  mb: 2, 
+                  color: 'primary.main',
+                  fontSize: { xs: '1.8rem', md: '2.2rem' }
+                }}>
+                  {jobDetailsModal.job.jobTitle || 'Job Title'}
+                </Typography>
+                <Typography variant="h5" color="text.secondary" sx={{ mb: 3, fontWeight: 600 }}>
+                  {jobDetailsModal.job.companyName || 'Company Name'}
+                </Typography>
+                
+                <Grid container spacing={3} sx={{ position: 'relative', zIndex: 1 }}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 2,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <LocationOn sx={{ color: 'primary.main', fontSize: 24 }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                          Location
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {jobDetailsModal.job.location || 'N/A'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 2,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <Work sx={{ color: 'primary.main', fontSize: 24 }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                          Type
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {jobDetailsModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                  
+                  {jobDetailsModal.job.minSalary && jobDetailsModal.job.maxSalary && (
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 2,
+                        p: 2,
+                        bgcolor: 'white',
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                      }}>
+                        <TrendingUp sx={{ color: 'success.main', fontSize: 24 }} />
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                            Salary
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, color: 'success.main' }}>
+                            ${jobDetailsModal.job.minSalary?.toLocaleString()} - ${jobDetailsModal.job.maxSalary?.toLocaleString()}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Grid>
+                  )}
+                  
+                  <Grid item xs={12} sm={6} md={3}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2,
+                      p: 2,
+                      bgcolor: 'white',
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <Event sx={{ color: 'primary.main', fontSize: 24 }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                          Applied Date
+                        </Typography>
+                        <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                          {formatDate(jobDetailsModal.job.application?.applicationDate || jobDetailsModal.job.applicationDate)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
+
+              <Grid container spacing={4}>
+                {/* Job Description */}
+                <Grid item xs={12} md={8}>
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="h5" sx={{ 
+                      fontWeight: 700, 
+                      mb: 3, 
+                      color: 'primary.main', 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      fontSize: { xs: '1.3rem', md: '1.5rem' }
+                    }}>
+                      <Assignment sx={{ mr: 2, fontSize: 28 }} />
+                      Job Description
+                    </Typography>
+                    <Box sx={{ 
+                      p: 4, 
+                      bgcolor: 'white', 
+                      borderRadius: 3, 
+                      border: '1px solid', 
+                      borderColor: 'divider',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <Box sx={{ 
+                        position: 'absolute', 
+                        top: 0, 
+                        left: 0, 
+                        width: '4px', 
+                        height: '100%', 
+                        bgcolor: 'primary.main' 
+                      }} />
+                      <Typography variant="body1" sx={{ 
+                        whiteSpace: 'pre-wrap', 
+                        lineHeight: 1.8,
+                        fontSize: '1.1rem',
+                        color: 'text.primary'
+                      }}>
+                        {jobDetailsModal.job.description || 'No description available.'}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Required Skills */}
+                  {jobDetailsModal.job.requiredSkills && jobDetailsModal.job.requiredSkills.length > 0 && (
+                    <Box sx={{ mb: 4 }}>
+                      <Typography variant="h5" sx={{ 
+                        fontWeight: 700, 
+                        mb: 3, 
+                        color: 'primary.main', 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        fontSize: { xs: '1.3rem', md: '1.5rem' }
+                      }}>
+                        <Star sx={{ mr: 2, fontSize: 28 }} />
+                        Required Skills
+                      </Typography>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        flexWrap: 'wrap', 
+                        gap: 2,
+                        p: 3,
+                        bgcolor: 'white',
+                        borderRadius: 3,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+                      }}>
+                        {jobDetailsModal.job.requiredSkills.map((skill, index) => (
+                          <Chip 
+                            key={index} 
+                            label={skill} 
+                            size="large" 
+                            color="primary" 
+                            variant="filled"
+                            sx={{ 
+                              fontWeight: 600, 
+                              px: 3, 
+                              py: 1,
+                              fontSize: '0.95rem',
+                              '&:hover': {
+                                transform: 'translateY(-2px)',
+                                boxShadow: '0 6px 16px rgba(25, 118, 210, 0.3)',
+                                transition: 'all 0.3s ease'
+                              }
+                            }}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Grid>
+
+                {/* Job Information Sidebar */}
+                <Grid item xs={12} md={4}>
+                  <Box sx={{ position: 'sticky', top: 20 }}>
+                    {/* Job Information Card */}
+                    <Box sx={{ 
+                      p: 4, 
+                      background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+                      borderRadius: 4, 
+                      mb: 3,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                    }}>
+                      <Typography variant="h5" sx={{ 
+                        fontWeight: 700, 
+                        mb: 4, 
+                        color: 'primary.main',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}>
+                        <Assignment sx={{ mr: 2, fontSize: 28 }} />
+                        Job Information
+                      </Typography>
+                      <Stack spacing={3}>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Posted Date
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                            {formatDate(jobDetailsModal.job.postedDate)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Job Type
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                            {jobDetailsModal.job.jobType?.replace('_', ' ') || 'Full Time'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Location
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                            {jobDetailsModal.job.location || 'N/A'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ 
+                          p: 2, 
+                          bgcolor: 'white', 
+                          borderRadius: 2,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ 
+                            fontWeight: 600, 
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            Status
+                          </Typography>
+                          <Chip 
+                            label={jobDetailsModal.job.application?.status || 'Applied'} 
+                            color={getStatusColor(jobDetailsModal.job.application?.status)}
+                            size="medium"
+                            sx={{ 
+                              fontWeight: 600, 
+                              mt: 1,
+                              px: 2
+                            }}
+                          />
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    {/* Application Status Card */}
+                    <Box sx={{ 
+                      p: 4, 
+                      background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+                      borderRadius: 4, 
+                      color: 'white',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <Box sx={{ 
+                        position: 'absolute', 
+                        top: -20, 
+                        right: -20, 
+                        width: '80px', 
+                        height: '80px', 
+                        background: 'rgba(255, 255, 255, 0.1)', 
+                        borderRadius: '50%' 
+                      }} />
+                      <Typography variant="h5" sx={{ 
+                        fontWeight: 700, 
+                        mb: 4,
+                        position: 'relative',
+                        zIndex: 1
+                      }}>
+                        Application Status
+                      </Typography>
+                      <Stack spacing={3} sx={{ position: 'relative', zIndex: 1 }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                            Current Status
+                          </Typography>
+                          <Chip 
+                            label={jobDetailsModal.job.application?.status?.replace('_', ' ') || 'Applied'} 
+                            sx={{ 
+                              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                              color: 'white',
+                              border: '1px solid rgba(255, 255, 255, 0.3)',
+                              fontWeight: 600,
+                              '& .MuiChip-label': {
+                                color: 'white'
+                              }
+                            }}
+                          />
+                        </Box>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                            Application ID
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {jobDetailsModal.job.application?.id || jobDetailsModal.job.id}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                            Applied Date
+                          </Typography>
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {formatDate(jobDetailsModal.job.application?.applicationDate || jobDetailsModal.job.applicationDate)}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </Box>
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button 
+            onClick={() => setJobDetailsModal({ open: false, job: null })}
+            variant="outlined"
+            sx={{ 
+              px: 4, 
+              py: 1.5,
+              borderRadius: 2,
+              fontWeight: 600,
+              '&:hover': {
+                transform: 'translateY(-1px)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                transition: 'all 0.3s ease'
+              }
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </PageContainer>
   )
 }
@@ -1395,7 +2710,7 @@ export default function JobSeekerDashboard() {
                 </Grid>
                 
                 <Grid item xs={12} sm={6}>
-                  <Typography variant="subtitle2" color="text.secondary">Interview Type</Typography>
+                  <Typography variant="subtitle2" color="text.secondary">Location</Typography>
                   <Typography variant="body1" sx={{ mb: 2 }}>
                     {interviewModal.interview.interviewType?.replace('_', ' ')}
                   </Typography>

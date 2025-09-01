@@ -16,10 +16,12 @@ public final class Enums {
     public enum NotificationType { JOB_MATCH, DEADLINE, PROFILE_ALERT, VETERAN_RESOURCE, SYSTEM }
 
     public enum DocumentStatus { SUBMITTED, APPROVED, REJECTED, RESUBMIT_REQUESTED }
-
-    public enum ProgramType { SNAP_ENT, WT_TANF, WIOA, OTHER }
+ 
+    public enum ProgramType { SNAP_ENT, WT_TANF, WIOA, RESUME, COVER_LETTER, OTHER }
 
     public enum CaseStatus { OPEN, IN_PROGRESS, ON_HOLD, CLOSED }
+
+
 }
 
 
