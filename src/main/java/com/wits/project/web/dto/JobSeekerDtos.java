@@ -71,6 +71,7 @@ public class JobSeekerDtos {
         // Documents
         private String resumeDocumentId;
         private String coverLetterDocumentId;
+        private String profilePictureDocumentId;
 
         // Profile completion
         private Double profileCompletionPercent;

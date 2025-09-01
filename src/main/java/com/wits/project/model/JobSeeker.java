@@ -39,6 +39,7 @@ public class JobSeeker extends BaseDocument {
     // Documents
     private String resumeDocumentId;
     private String coverLetterDocumentId;
+    private String profilePicture;
 
     // Profile completion
     private Double profileCompletionPercent;

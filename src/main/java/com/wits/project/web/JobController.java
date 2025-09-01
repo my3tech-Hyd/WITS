@@ -2,6 +2,8 @@ package com.wits.project.web;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,12 +18,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.wits.project.model.JobPosting;
+import com.wits.project.model.Employer;
 import com.wits.project.model.enums.Enums.JobStatus;
 import com.wits.project.model.enums.Enums.JobType;
 import com.wits.project.repository.JobPostingRepository;
+import com.wits.project.repository.EmployerRepository;
 import com.wits.project.security.SecurityUtil;
 import com.wits.project.service.ApplicationService;
 import com.wits.project.service.ApplicationService.ApplicationWithDetails;
+import java.util.Optional;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -32,15 +37,38 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class JobController {
     private final JobPostingRepository jobs;
+    private final EmployerRepository employerRepository;
     private final ApplicationService applicationService;
 
     @PostMapping
     @PreAuthorize("hasRole('EMPLOYER')")
     public ResponseEntity<JobPosting> create(@RequestBody CreateJobRequest req) {
         JobPosting j = new JobPosting();
-        j.setEmployerId(SecurityUtil.getCurrentUserId());
+        String currentUserId = SecurityUtil.getCurrentUserId();
+        System.out.println("DEBUG: Creating job for employer ID: " + currentUserId);
+        
+        j.setEmployerId(currentUserId);
         j.setTitle(req.title);
-        j.setCompanyName(req.companyName);
+        
+        // Set company name - if not provided, try to get from employer profile
+        String companyName = req.companyName;
+        if (companyName == null || companyName.trim().isEmpty()) {
+            System.out.println("DEBUG: Company name not provided, fetching from employer profile");
+            try {
+                // Try to find employer profile and get company name
+                Optional<Employer> employerOpt = employerRepository.findByUserId(currentUserId);
+                if (employerOpt.isPresent()) {
+                    companyName = employerOpt.get().getCompanyName();
+                    System.out.println("DEBUG: Found company name from employer profile: " + companyName);
+                } else {
+                    System.out.println("DEBUG: No employer profile found for user: " + currentUserId);
+                }
+            } catch (Exception e) {
+                System.out.println("DEBUG: Error fetching employer profile: " + e.getMessage());
+            }
+        }
+        j.setCompanyName(companyName);
+        
         j.setDescription(req.description);
         j.setJobType(req.jobType == null ? JobType.FULL_TIME : req.jobType);
         j.setLocation(req.location);
@@ -130,9 +158,21 @@ public class JobController {
         List<JobPosting> allJobs = jobs.findAll();
         System.out.println("DEBUG: Total jobs in database: " + allJobs.size());
         allJobs.forEach(job -> {
-            System.out.println("DEBUG: Job - ID: " + job.getId() + ", Title: " + job.getTitle() + ", Company: " + job.getCompanyName());
+            System.out.println("DEBUG: Job - ID: " + job.getId() + ", Title: " + job.getTitle() + ", Company: " + job.getCompanyName() + ", EmployerId: " + job.getEmployerId());
         });
         return ResponseEntity.ok(allJobs);
+    }
+
+    // Debug endpoint to check current user ID
+    @GetMapping("/debug/current-user")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<Map<String, Object>> debugCurrentUser() {
+        String currentUserId = SecurityUtil.getCurrentUserId();
+        Map<String, Object> response = new HashMap<>();
+        response.put("currentUserId", currentUserId);
+        response.put("timestamp", Instant.now());
+        System.out.println("DEBUG: Current user ID: " + currentUserId);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping

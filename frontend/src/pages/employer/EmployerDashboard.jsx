@@ -3203,7 +3203,7 @@ function MyProfile() {
               <Grid container spacing={3}>
                 <Grid item xs={12} sx={{ textAlign: 'center', mb: 3 }}>
                   <Avatar
-                    src={formData.profilePicture}
+                    src={formData.profilePicture ? employerAPI.getProfilePictureUrl() : undefined}
                     sx={{ width: 120, height: 120, mx: 'auto', mb: 2 }}
                   />
                   {editMode && (

@@ -190,6 +190,63 @@ public class JobSeekerController {
     }
 
     /**
+     * Upload profile picture for current user
+     */
+    @PostMapping("/profile/picture")
+    public ResponseEntity<String> uploadProfilePicture(@RequestParam("file") MultipartFile file) {
+        try {
+            String currentUserId = SecurityUtil.getCurrentUserId();
+            log.info("Uploading profile picture for user: {}", currentUserId);
+            log.info("File details: name={}, size={}, contentType={}", 
+                    file.getOriginalFilename(), file.getSize(), file.getContentType());
+
+            // Validate file type (only images)
+            String contentType = file.getContentType();
+            if (contentType == null || !contentType.startsWith("image/")) {
+                log.error("Invalid file type for profile picture: {}", contentType);
+                return ResponseEntity.badRequest().body("Only image files are allowed for profile pictures");
+            }
+
+            // Upload document and create ProgramDocument record
+            com.wits.project.model.ProgramDocument document = documentService.uploadDocument(
+                file, 
+                currentUserId, 
+                com.wits.project.model.enums.Enums.ProgramType.PROFILE_PICTURE, 
+                "Profile Picture for " + file.getOriginalFilename()
+            );
+            log.info("Profile picture document created with ID: {}", document.getId());
+            
+            // Get or create the job seeker profile
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(currentUserId);
+            JobSeeker jobSeeker;
+            
+            if (jobSeekerOpt.isPresent()) {
+                jobSeeker = jobSeekerOpt.get();
+                log.info("Updating existing JobSeeker profile with ID: {}", jobSeeker.getId());
+                log.info("Current profilePicture: {}", jobSeeker.getProfilePicture());
+            } else {
+                // Create new job seeker profile if it doesn't exist
+                jobSeeker = jobSeekerService.createJobSeekerFromUser(currentUserId);
+                log.info("Created new JobSeeker profile for user: {} with ID: {}", currentUserId, jobSeeker.getId());
+            }
+            
+            // Update the profile picture
+            log.info("Setting profilePicture to: {}", document.getId());
+            jobSeeker.setProfilePicture(document.getId());
+            
+            // Save the profile
+            JobSeeker savedJobSeeker = jobSeekerService.saveJobSeekerProfile(jobSeeker);
+            log.info("Profile saved successfully. New profilePicture: {}", savedJobSeeker.getProfilePicture());
+            log.info("Profile ID: {}", savedJobSeeker.getId());
+
+            return ResponseEntity.ok(document.getId());
+        } catch (Exception e) {
+            log.error("Error uploading profile picture: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
      * Search job seekers (for employers)
      */
     @GetMapping("/search")
@@ -462,6 +519,112 @@ public class JobSeekerController {
         }
     }
 
+    /**
+     * Download profile picture file
+     */
+    @GetMapping("/profile/picture/download")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadProfilePicture() {
+        try {
+            String currentUserId = SecurityUtil.getCurrentUserId();
+            log.info("Downloading profile picture for user: {}", currentUserId);
+            
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(currentUserId);
+            if (jobSeekerOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            JobSeeker jobSeeker = jobSeekerOpt.get();
+            String profilePictureDocumentId = jobSeeker.getProfilePicture();
+            
+            if (profilePictureDocumentId == null || profilePictureDocumentId.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            // Get the document from ProgramDocument collection
+            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(profilePictureDocumentId);
+            if (documentOpt.isEmpty()) {
+                log.warn("Profile picture document not found with ID: {}", profilePictureDocumentId);
+                return ResponseEntity.notFound().build();
+            }
+            
+            com.wits.project.model.ProgramDocument document = documentOpt.get();
+            
+            // Verify the document belongs to the current user
+            if (!document.getUserId().equals(currentUserId)) {
+                log.warn("Profile picture document does not belong to current user. Document user: {}, current user: {}", 
+                        document.getUserId(), currentUserId);
+                return ResponseEntity.status(403).build();
+            }
+            
+            String filePath = document.getFileId();
+            
+            if (!fileStorageService.fileExists(filePath)) {
+                log.warn("Profile picture file not found at path: {}", filePath);
+                return ResponseEntity.notFound().build();
+            }
+            
+            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
+            
+            return ResponseEntity.ok()
+                .header("Content-Type", document.getFileContentType())
+                .body(resource);
+                
+        } catch (Exception e) {
+            log.error("Error downloading profile picture: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Download profile picture file for employer (by user ID)
+     */
+    @GetMapping("/profile/picture/download/employer")
+    @PreAuthorize("hasRole('EMPLOYER')")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadProfilePictureForEmployer(@RequestParam String userId) {
+        try {
+            log.info("Employer downloading profile picture for user: {}", userId);
+            
+            Optional<JobSeeker> jobSeekerOpt = jobSeekerService.getJobSeekerByUserId(userId);
+            if (jobSeekerOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            JobSeeker jobSeeker = jobSeekerOpt.get();
+            String profilePictureDocumentId = jobSeeker.getProfilePicture();
+            
+            if (profilePictureDocumentId == null || profilePictureDocumentId.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            // Get the document from ProgramDocument collection
+            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(profilePictureDocumentId);
+            if (documentOpt.isEmpty()) {
+                log.warn("Profile picture document not found with ID: {}", profilePictureDocumentId);
+                return ResponseEntity.notFound().build();
+            }
+            
+            com.wits.project.model.ProgramDocument document = documentOpt.get();
+            String filePath = document.getFileId();
+            
+            if (!fileStorageService.fileExists(filePath)) {
+                log.warn("Profile picture file not found at path: {}", filePath);
+                return ResponseEntity.notFound().build();
+            }
+            
+            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
+            
+            return ResponseEntity.ok()
+                .header("Content-Type", document.getFileContentType())
+                .body(resource);
+                
+        } catch (Exception e) {
+            log.error("Error downloading profile picture for employer: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     // Helper methods to convert between DTOs and entities
     private ProfileResponse convertToProfileResponse(JobSeeker jobSeeker) {
         ProfileResponse response = new ProfileResponse();
@@ -482,6 +645,7 @@ public class JobSeekerController {
         response.setResourceReferralOptIn(jobSeeker.getResourceReferralOptIn());
         response.setResumeDocumentId(jobSeeker.getResumeDocumentId());
         response.setCoverLetterDocumentId(jobSeeker.getCoverLetterDocumentId());
+        response.setProfilePictureDocumentId(jobSeeker.getProfilePicture());
         response.setProfileCompletionPercent(jobSeeker.getProfileCompletionPercent());
         response.setPreferredJobType(jobSeeker.getPreferredJobType());
         response.setPreferredLocation(jobSeeker.getPreferredLocation());

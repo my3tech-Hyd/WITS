@@ -55,10 +55,17 @@ import {
   Edit,
   Refresh,
   Star,
-  Flag
+  Flag,
+  People,
+  School,
+  Schedule,
+  AccountTree,
+  AccessTime,
+  CalendarToday
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { jobAPI, applicationAPI, userAPI, roleUtils, jobSeekerAPI } from '../../api/apiService.js'
+import Services from './Services.jsx'
 import { 
   DashboardCard, 
   StatsCard, 
@@ -82,6 +89,85 @@ function DashboardHome({ setSelectedTab }) {
     profileCompletion: 0
   })
   const [recentJobs, setRecentJobs] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
+
+  // Helper function to get status label
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'APPLICATION_SENT':
+        return 'Applied'
+      case 'UNDER_REVIEW':
+        return 'Under Review'
+      case 'INTERVIEW_SCHEDULED':
+        return 'Interview Scheduled'
+      case 'OFFERED':
+        return 'Offered'
+      case 'REJECTED':
+        return 'Rejected'
+      case 'WITHDRAWN':
+        return 'Withdrawn'
+      default:
+        return status
+    }
+  }
+
+
+
+  // Handle apply for job
+  const handleApplyForJob = async (job) => {
+    try {
+      setLoading(true)
+      const applicationData = {
+        jobPostingId: job.id,
+        coverLetter: `I am interested in the ${job.title} position at ${job.companyName}.`,
+        resumeDocumentId: null // Will be set from profile
+      }
+      
+      await applicationAPI.applyForJob(applicationData)
+      
+             // Refresh dashboard data to update the button status
+       const loadDashboardData = async () => {
+         try {
+           const applicationsResponse = await applicationAPI.getMyApplicationsWithJobDetails()
+           const applications = applicationsResponse || []
+           
+           const jobsResponse = await jobAPI.getAllJobs()
+           const jobs = jobsResponse || []
+           
+           const jobApplicationMap = new Map()
+           applications.forEach(app => {
+             const jobId = app.application?.jobPostingId
+             if (jobId) {
+               jobApplicationMap.set(jobId, {
+                 status: app.application?.status,
+                 applicationId: app.application?.id
+               })
+             }
+           })
+           
+           const enhancedJobs = jobs.slice(0, 5).map(job => ({
+             ...job,
+             applicationStatus: jobApplicationMap.get(job.id)?.status || null,
+             applicationId: jobApplicationMap.get(job.id)?.applicationId || null
+           }))
+           
+           setRecentJobs(enhancedJobs)
+         } catch (error) {
+           console.error('Failed to refresh dashboard data:', error)
+         }
+       }
+      
+      await loadDashboardData()
+      setSuccessMessage(`Successfully applied for ${job.title}!`)
+      setTimeout(() => setSuccessMessage(''), 3000) // Clear message after 3 seconds
+    } catch (error) {
+      console.error('Failed to apply for job:', error)
+      // You might want to show an error message to the user here
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -89,25 +175,58 @@ function DashboardHome({ setSelectedTab }) {
         // Load applications
         const applicationsResponse = await applicationAPI.getMyApplicationsWithJobDetails()
         const applications = applicationsResponse || []
-        
-
+        console.log('DEBUG: Applications data:', applications)
         
         // Load recent jobs
         const jobsResponse = await jobAPI.getAllJobs()
         const jobs = jobsResponse || []
+        console.log('DEBUG: Jobs data:', jobs)
+        
+        // Create a map of job IDs to application status
+        const jobApplicationMap = new Map()
+        applications.forEach(app => {
+          // The application data structure has the jobPostingId directly in the application object
+          const jobId = app.application?.jobPostingId
+          if (jobId) {
+            jobApplicationMap.set(jobId, {
+              status: app.application?.status,
+              applicationId: app.application?.id
+            })
+          }
+        })
+        console.log('DEBUG: Job application map:', jobApplicationMap)
+        
+        // Enhance jobs with application status
+        const enhancedJobs = jobs.slice(0, 5).map(job => ({
+          ...job,
+          applicationStatus: jobApplicationMap.get(job.id)?.status || null,
+          applicationId: jobApplicationMap.get(job.id)?.applicationId || null
+        }))
+        console.log('DEBUG: Enhanced jobs:', enhancedJobs)
+        
+        // Load profile completion percentage
+        let profileCompletionPercent = 75 // Default fallback
+        try {
+          const profileResponse = await jobSeekerAPI.getMyProfile()
+          if (profileResponse && profileResponse.profileCompletionPercent) {
+            profileCompletionPercent = profileResponse.profileCompletionPercent
+          }
+        } catch (profileError) {
+          console.error('Failed to load profile completion:', profileError)
+        }
         
         setStats({
           totalApplications: applications.length,
           activeApplications: applications.filter(app => 
-            ['RECEIVED', 'UNDER_REVIEW', 'INTERVIEW_SCHEDULED'].includes(app.application?.status || app.status)
+            ['RECEIVED', 'UNDER_REVIEW', 'INTERVIEW_SCHEDULED'].includes(app.application?.status)
           ).length,
           interviewsScheduled: applications.filter(app => 
-            (app.application?.status || app.status) === 'INTERVIEW_SCHEDULED'
+            app.application?.status === 'INTERVIEW_SCHEDULED'
           ).length,
-          profileCompletion: 75 // Mock data
+          profileCompletion: profileCompletionPercent
         })
         
-        setRecentJobs(jobs.slice(0, 5)) // Get first 5 jobs
+        setRecentJobs(enhancedJobs)
       } catch (error) {
         console.error('Failed to load dashboard data:', error)
       }
@@ -118,6 +237,11 @@ function DashboardHome({ setSelectedTab }) {
 
   return (
     <PageContainer>
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+          {successMessage}
+        </Alert>
+      )}
       <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700 }}>
         Welcome back!
       </AnimatedTypography>
@@ -228,9 +352,49 @@ function DashboardHome({ setSelectedTab }) {
         <Grid item xs={12} md={6}>
           <AnimatedBox animation="fadeInUp" delay={0.7}>
             <DashboardCard>
-              <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                Recent Job Opportunities
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Recent Job Opportunities
+                </Typography>
+                <IconButton 
+                                     onClick={() => {
+                     const loadDashboardData = async () => {
+                       try {
+                         const applicationsResponse = await applicationAPI.getMyApplicationsWithJobDetails()
+                         const applications = applicationsResponse || []
+                         
+                         const jobsResponse = await jobAPI.getAllJobs()
+                         const jobs = jobsResponse || []
+                         
+                         const jobApplicationMap = new Map()
+                         applications.forEach(app => {
+                           const jobId = app.application?.jobPostingId
+                           if (jobId) {
+                             jobApplicationMap.set(jobId, {
+                               status: app.application?.status,
+                               applicationId: app.application?.id
+                             })
+                           }
+                         })
+                         
+                         const enhancedJobs = jobs.slice(0, 5).map(job => ({
+                           ...job,
+                           applicationStatus: jobApplicationMap.get(job.id)?.status || null,
+                           applicationId: jobApplicationMap.get(job.id)?.applicationId || null
+                         }))
+                         
+                         setRecentJobs(enhancedJobs)
+                       } catch (error) {
+                         console.error('Failed to refresh dashboard data:', error)
+                       }
+                     }
+                     loadDashboardData()
+                   }}
+                  size="small"
+                >
+                  <Refresh />
+                </IconButton>
+              </Box>
               <Stack spacing={2}>
                 {recentJobs.map((job, index) => (
                   <Box 
@@ -259,16 +423,25 @@ function DashboardHome({ setSelectedTab }) {
                           {job.location}
                         </Typography>
                       </Box>
-                      <PrimaryButton 
-                        size="small" 
-                        startIcon={<Send />}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Handle apply logic here
-                        }}
-                      >
-                        Apply
-                      </PrimaryButton>
+                      {job.applicationStatus ? (
+                        <StatusChip 
+                          label={getStatusLabel(job.applicationStatus)}
+                          status={job.applicationStatus.toLowerCase()}
+                          size="small"
+                        />
+                      ) : (
+                        <PrimaryButton 
+                          size="small" 
+                          startIcon={loading ? <CircularProgress size={16} /> : <Send />}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleApplyForJob(job)
+                          }}
+                          disabled={loading}
+                        >
+                          {loading ? 'Applying...' : 'Apply'}
+                        </PrimaryButton>
+                      )}
                     </Stack>
                   </Box>
                 ))}
@@ -747,22 +920,35 @@ function MyProfile() {
     willingToRelocate: false,
     linkedInProfile: '',
     portfolioUrl: '',
-    summary: ''
+    summary: '',
+    profilePicture: ''
   })
   const [skillInput, setSkillInput] = useState('')
   const [certificationInput, setCertificationInput] = useState('')
   const [resumeFile, setResumeFile] = useState(null)
   const [coverLetterFile, setCoverLetterFile] = useState(null)
+  const [profilePictureFile, setProfilePictureFile] = useState(null)
+  const [profilePicturePreview, setProfilePicturePreview] = useState(null)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
+  const [profileExists, setProfileExists] = useState(false)
   const currentUser = roleUtils.getCurrentUser()
 
   // Load profile data on component mount
   useEffect(() => {
     loadProfile()
   }, [])
+
+  // Cleanup profile picture preview on unmount
+  useEffect(() => {
+    return () => {
+      if (profilePicturePreview) {
+        URL.revokeObjectURL(profilePicturePreview)
+      }
+    }
+  }, [profilePicturePreview])
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -824,11 +1010,20 @@ function MyProfile() {
         return
       }
       
-      // Validate file type
-      const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-      if (!allowedTypes.includes(file.type)) {
-        setErr('Please upload only PDF or DOCX files')
-        return
+      if (fileType === 'resume' || fileType === 'coverLetter') {
+        // Validate file type for documents
+        const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+        if (!allowedTypes.includes(file.type)) {
+          setErr('Please upload only PDF or DOCX files')
+          return
+        }
+      } else if (fileType === 'profilePicture') {
+        // Validate file type for images
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif']
+        if (!allowedTypes.includes(file.type)) {
+          setErr('Please upload only JPG, PNG, or GIF image files')
+          return
+        }
       }
       
       if (fileType === 'resume') {
@@ -837,6 +1032,10 @@ function MyProfile() {
       } else if (fileType === 'coverLetter') {
         setCoverLetterFile(file)
         console.log('✅ Cover letter file set in state')
+      } else if (fileType === 'profilePicture') {
+        setProfilePictureFile(file)
+        setProfilePicturePreview(URL.createObjectURL(file))
+        console.log('✅ Profile picture file set in state')
       }
       setErr('') // Clear any previous errors
     }
@@ -911,6 +1110,12 @@ function MyProfile() {
         console.log('✅ Cover letter upload response:', coverLetterResponse)
         setMsg(prev => prev + ' Cover letter uploaded successfully. ')
       }
+      if (profilePictureFile) {
+        console.log('📤 Uploading profile picture file...')
+        const profilePictureResponse = await jobSeekerAPI.uploadProfilePicture(profilePictureFile)
+        console.log('✅ Profile picture upload response:', profilePictureResponse)
+        setMsg(prev => prev + ' Profile picture uploaded successfully. ')
+      }
 
       // Update profile data
       const profileData = {
@@ -931,11 +1136,18 @@ function MyProfile() {
         }))
       }
       
+      // Set profile exists to true after successful save
+      setProfileExists(true)
       setMsg('Profile updated successfully') 
       
       // Clear file inputs after successful save
       setResumeFile(null)
       setCoverLetterFile(null)
+      setProfilePictureFile(null)
+      if (profilePicturePreview) {
+        URL.revokeObjectURL(profilePicturePreview)
+        setProfilePicturePreview(null)
+      }
       
       // Refresh profile data to get the latest information
       setTimeout(() => {
@@ -958,7 +1170,9 @@ function MyProfile() {
       const response = await jobSeekerAPI.getMyProfile()
       console.log('✅ JobSeeker profile loaded:', response)
       
-      if (response) {
+      if (response && response.id) {
+        // Profile exists
+        setProfileExists(true)
         setForm(prev => ({
           ...prev,
           firstName: response.firstName || '',
@@ -982,11 +1196,40 @@ function MyProfile() {
           linkedInProfile: response.linkedInProfile || '',
           portfolioUrl: response.portfolioUrl || '',
           summary: response.summary || '',
-          profileCompletionPercent: response.profileCompletionPercent || 0
+          profileCompletionPercent: response.profileCompletionPercent || 0,
+          profilePicture: response.profilePicture || ''
         }))
+      } else {
+        // Profile doesn't exist
+        setProfileExists(false)
+        // Try to load user data as fallback
+        try {
+          const userResponse = await userAPI.getCurrentUser()
+          if (userResponse) {
+            setForm(prev => ({
+              ...prev,
+              firstName: userResponse.firstName || '',
+              lastName: userResponse.lastName || '',
+              dateOfBirth: userResponse.dateOfBirth || '',
+              email: userResponse.email || '',
+              phoneNumber: userResponse.phoneNumber || '',
+              address: userResponse.address || '',
+              education: userResponse.education || '',
+              skills: userResponse.skills || [],
+              certifications: userResponse.certifications || [],
+              veteran: userResponse.veteran || false,
+              spouse: userResponse.spouse || false,
+              resourceReferralOptIn: userResponse.resourceReferralOptIn || false
+            }))
+          }
+        } catch (userError) {
+          console.error('Failed to load user data as fallback:', userError)
+        }
       }
     } catch (error) {
       console.error('Failed to load JobSeeker profile:', error)
+      // Profile doesn't exist
+      setProfileExists(false)
       // Try to load user data as fallback
       try {
         const userResponse = await userAPI.getCurrentUser()
@@ -1025,16 +1268,73 @@ function MyProfile() {
           <AnimatedBox animation="fadeInUp" delay={0.3}>
             <DashboardCard>
               <Box sx={{ textAlign: 'center', p: 3 }}>
-                <Avatar sx={{ 
-                  width: 120, 
-                  height: 120, 
-                  mx: 'auto', 
-                  mb: 3, 
-                  bgcolor: 'primary.main',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                }}>
-                  <Person sx={{ fontSize: 60 }} />
-                </Avatar>
+                <Box sx={{ position: 'relative', display: 'inline-block', mb: 3 }}>
+                  <Avatar sx={{ 
+                    width: 120, 
+                    height: 120, 
+                    bgcolor: 'primary.main',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      transform: 'scale(1.05)',
+                      boxShadow: '0 6px 20px rgba(0,0,0,0.2)'
+                    }
+                  }}
+                  onClick={() => document.getElementById('profile-picture-input').click()}
+                  src={form.profilePicture ? jobSeekerAPI.getProfilePictureUrl() : undefined}
+                  >
+                    <Person sx={{ fontSize: 60 }} />
+                  </Avatar>
+                  <IconButton
+                    sx={{
+                      position: 'absolute',
+                      bottom: 0,
+                      right: 0,
+                      bgcolor: 'primary.main',
+                      color: 'white',
+                      '&:hover': {
+                        bgcolor: 'primary.dark'
+                      },
+                      width: 32,
+                      height: 32
+                    }}
+                    onClick={() => document.getElementById('profile-picture-input').click()}
+                  >
+                    <CloudUpload sx={{ fontSize: 16 }} />
+                  </IconButton>
+                  <input
+                    id="profile-picture-input"
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={(e) => handleFileChange(e, 'profilePicture')}
+                  />
+                </Box>
+                {profilePictureFile && (
+                  <Box sx={{ mt: 2, p: 2, bgcolor: 'success.50', borderRadius: 2 }}>
+                    <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
+                      ✓ {profilePictureFile.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {(profilePictureFile.size / 1024 / 1024).toFixed(2)} MB
+                    </Typography>
+                    <Box sx={{ mt: 1, textAlign: 'center' }}>
+                      <img 
+                        src={profilePicturePreview} 
+                        alt="Profile preview" 
+                        style={{ 
+                          width: '80px', 
+                          height: '80px', 
+                          borderRadius: '50%', 
+                          objectFit: 'cover',
+                          border: '2px solid #fff',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                        }} 
+                      />
+                    </Box>
+                  </Box>
+                )}
                 <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: 'primary.main' }}>
                   {currentUser.firstName} {currentUser.lastName}
                 </Typography>
@@ -1078,10 +1378,10 @@ function MyProfile() {
                   <Button
                     variant="outlined"
                     onClick={loadProfile}
-                    startIcon={<Refresh />}
+                    startIcon={profileExists ? <Edit /> : <Refresh />}
                     sx={{ borderRadius: 2 }}
                   >
-                    Refresh
+                    {profileExists ? 'Edit' : 'Refresh'}
                   </Button>
                 </Box>
                 
@@ -1160,6 +1460,105 @@ function MyProfile() {
                           placeholder="Enter your full address..."
                           sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                         />
+                      </Grid>
+                      <Grid item xs={12}>
+                        <Box sx={{ 
+                          border: '2px dashed', 
+                          borderColor: 'primary.main', 
+                          borderRadius: 3, 
+                          p: 3, 
+                          textAlign: 'center',
+                          bgcolor: 'primary.50',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            bgcolor: 'primary.100',
+                            transform: 'translateY(-2px)'
+                          }
+                        }}>
+                          <Typography variant="h6" sx={{ color: 'primary.main', mb: 2, fontWeight: 600 }}>
+                            Profile Picture
+                          </Typography>
+                          {form.profilePicture ? (
+                            <Box sx={{ mb: 2 }}>
+                              <img 
+                                src={`/api/jobseekers/profile/picture/download?documentId=${form.profilePicture}`}
+                                alt="Current profile picture" 
+                                style={{ 
+                                  width: '100px', 
+                                  height: '100px', 
+                                  borderRadius: '50%', 
+                                  objectFit: 'cover',
+                                  border: '3px solid #fff',
+                                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                                }} 
+                              />
+                              <Typography variant="body2" sx={{ mt: 1, color: 'success.main', fontWeight: 600 }}>
+                                ✓ Profile picture uploaded
+                              </Typography>
+                            </Box>
+                          ) : (
+                            <Box sx={{ mb: 2 }}>
+                              <Avatar sx={{ 
+                                width: 100, 
+                                height: 100, 
+                                mx: 'auto', 
+                                bgcolor: 'grey.300',
+                                mb: 1
+                              }}>
+                                <Person sx={{ fontSize: 50 }} />
+                              </Avatar>
+                              <Typography variant="body2" color="text.secondary">
+                                No profile picture uploaded
+                              </Typography>
+                            </Box>
+                          )}
+                          <Button
+                            variant="outlined"
+                            component="label"
+                            startIcon={<CloudUpload />}
+                            sx={{ 
+                              borderRadius: 2, 
+                              borderColor: 'primary.main', 
+                              color: 'primary.main',
+                              '&:hover': {
+                                borderColor: 'primary.dark',
+                                bgcolor: 'primary.50'
+                              }
+                            }}
+                          >
+                            {form.profilePicture ? 'Change Profile Picture' : 'Upload Profile Picture'}
+                            <input
+                              type="file"
+                              hidden
+                              accept="image/*"
+                              onChange={(e) => handleFileChange(e, 'profilePicture')}
+                            />
+                          </Button>
+                          {profilePictureFile && (
+                            <Box sx={{ mt: 2, p: 2, bgcolor: 'success.50', borderRadius: 2 }}>
+                              <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
+                                ✓ {profilePictureFile.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {(profilePictureFile.size / 1024 / 1024).toFixed(2)} MB
+                              </Typography>
+                              <Box sx={{ mt: 1, textAlign: 'center' }}>
+                                <img 
+                                  src={profilePicturePreview} 
+                                  alt="Profile preview" 
+                                  style={{ 
+                                    width: '80px', 
+                                    height: '80px', 
+                                    borderRadius: '50%', 
+                                    objectFit: 'cover',
+                                    border: '2px solid #fff',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                  }} 
+                                />
+                              </Box>
+                            </Box>
+                          )}
+                        </Box>
                       </Grid>
                     </Grid>
                   </Box>
@@ -1386,6 +1785,8 @@ function MyProfile() {
                   )}
                 </Box>
               </Grid>
+
+
             </Grid>
           </Box>
 
@@ -1568,10 +1969,10 @@ function MyProfile() {
               {loading ? (
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <CircularProgress size={20} sx={{ mr: 1, color: 'white' }} />
-                  Saving Profile...
+                  {profileExists ? 'Updating Profile...' : 'Saving Profile...'}
                 </Box>
               ) : (
-                'Save Profile'
+                profileExists ? 'Update Profile' : 'Save Profile'
               )}
             </PrimaryButton>
           </Box>
@@ -1589,6 +1990,9 @@ function MyProfile() {
 function MyApplications() {
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedJob, setSelectedJob] = useState(null)
+  const [jobDetailsModal, setJobDetailsModal] = useState(false)
+  const [interviewDetails, setInterviewDetails] = useState({})
 
   useEffect(() => {
     const loadApplications = async () => {
@@ -1596,6 +2000,26 @@ function MyApplications() {
         const response = await applicationAPI.getMyApplicationsWithJobDetails()
         setApplications(response || [])
         console.log("Enriched Job Data !!",response);
+        
+        // Load interview details for applications with INTERVIEW_SCHEDULED status
+        const interviewPromises = response
+          .filter(app => app.application?.status === 'INTERVIEW_SCHEDULED')
+          .map(async (app) => {
+            try {
+              const interview = await applicationAPI.getInterviewDetails(app.application.id)
+              return { applicationId: app.application.id, interview }
+            } catch (error) {
+              console.error('Failed to load interview details:', error)
+              return { applicationId: app.application.id, interview: null }
+            }
+          })
+        
+        const interviewResults = await Promise.all(interviewPromises)
+        const interviewMap = {}
+        interviewResults.forEach(result => {
+          interviewMap[result.applicationId] = result.interview
+        })
+        setInterviewDetails(interviewMap)
       } catch (error) {
         console.error('Failed to load applications:', error)
       } finally {
@@ -1608,7 +2032,7 @@ function MyApplications() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'RECEIVED': return 'info'
+      case 'APPLICATION_SENT': return 'info'
       case 'UNDER_REVIEW': return 'warning'
       case 'INTERVIEW_SCHEDULED': return 'primary'
       case 'OFFERED': return 'success'
@@ -1625,6 +2049,31 @@ function MyApplications() {
       day: 'numeric', 
       year: 'numeric' 
     })
+  }
+
+  const formatInterviewDateTime = (dateTimeString) => {
+    if (!dateTimeString) return ''
+    const date = new Date(dateTimeString)
+    const formattedDate = date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    })
+    const formattedTime = date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })
+    return `${formattedDate} at ${formattedTime}`
+  }
+
+  const handleViewJobDetails = (job) => {
+    setSelectedJob(job)
+    setJobDetailsModal(true)
+  }
+
+  const handleCloseJobDetails = () => {
+    setJobDetailsModal(false)
+    setSelectedJob(null)
   }
 
   return (
@@ -1677,16 +2126,126 @@ function MyApplications() {
                         </Typography>
                         <Stack direction="row" spacing={2} alignItems="center">
                           <StatusChip 
-                            label={app.application?.status || app.status || 'Received'} 
+                            label={app.application?.status || app.status || 'Application Sent'} 
                             status={app.application?.status || app.status}
                             size="small"
                           />
-                          <Typography variant="body2" color="text.secondary">
+                          {/* <Typography variant="body2" color="text.secondary">
                             Application ID: {app.application?.id || app.id}
-                          </Typography>
+                          </Typography> */}
                         </Stack>
+                        
+                        {/* Show interview details if status is INTERVIEW_SCHEDULED */}
+                        {(app.application?.status === 'INTERVIEW_SCHEDULED' || app.status === 'INTERVIEW_SCHEDULED') && (
+                          <Box sx={{ 
+                            mt: 2, 
+                            p: 2.5, 
+                            background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.08) 0%, rgba(66, 165, 245, 0.04) 100%)',
+                            borderRadius: 2,
+                            border: '1px solid',
+                            borderColor: 'primary.200',
+                            position: 'relative',
+                            overflow: 'hidden',
+                            transition: 'all 0.3s ease-in-out',
+                            '&:hover': {
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 4px 12px rgba(25, 118, 210, 0.15)',
+                              borderColor: 'primary.main'
+                            },
+                            '&::before': {
+                              content: '""',
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              height: '3px',
+                              background: 'linear-gradient(90deg, #1976d2 0%, #42a5f5 50%, #1976d2 100%)',
+                            }
+                          }}>
+                            <Stack spacing={1.5}>
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <Box sx={{
+                                  p: 0.5,
+                                  borderRadius: '50%',
+                                  bgcolor: 'primary.main',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  animation: 'pulse 2s infinite',
+                                  '@keyframes pulse': {
+                                    '0%': {
+                                      transform: 'scale(1)',
+                                      boxShadow: '0 0 0 0 rgba(25, 118, 210, 0.7)'
+                                    },
+                                    '70%': {
+                                      transform: 'scale(1.05)',
+                                      boxShadow: '0 0 0 6px rgba(25, 118, 210, 0)'
+                                    },
+                                    '100%': {
+                                      transform: 'scale(1)',
+                                      boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)'
+                                    }
+                                  }
+                                }}>
+                                  <Event sx={{ fontSize: 18, color: 'white' }} />
+                                </Box>
+                                <Typography variant="subtitle2" color="primary.main" sx={{ fontWeight: 600 }}>
+                                  Interview Scheduled
+                                </Typography>
+                              </Stack>
+                              
+                              <Stack direction="row" spacing={2} alignItems="center">
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <CalendarToday sx={{ fontSize: 16, color: 'primary.main' }} />
+                                  <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                                    {formatInterviewDateTime(interviewDetails[app.application?.id]?.scheduledDateTime)}
+                                  </Typography>
+                                </Stack>
+                                
+                                {interviewDetails[app.application?.id]?.location && (
+                                  <Stack direction="row" spacing={1} alignItems="center">
+                                    <LocationOn sx={{ fontSize: 16, color: 'primary.main' }} />
+                                    <Typography variant="body2" color="text.secondary">
+                                      {interviewDetails[app.application?.id]?.location}
+                                    </Typography>
+                                  </Stack>
+                                )}
+                              </Stack>
+                              
+                              {interviewDetails[app.application?.id]?.interviewType && (
+                                <Chip 
+                                  label={interviewDetails[app.application?.id]?.interviewType}
+                                  size="small"
+                                  icon={<Work sx={{ fontSize: 16 }} />}
+                                  sx={{
+                                    alignSelf: 'flex-start',
+                                    background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.1) 0%, rgba(66, 165, 245, 0.05) 100%)',
+                                    color: 'primary.main',
+                                    fontWeight: 600,
+                                    fontSize: '0.75rem',
+                                    border: '1px solid rgba(25, 118, 210, 0.2)',
+                                    '& .MuiChip-icon': {
+                                      color: 'primary.main'
+                                    }
+                                  }}
+                                />
+                              )}
+                            </Stack>
+                          </Box>
+                        )}
                       </Box>
-                      <IconButton size="small" title="View Details" sx={{ color: 'primary.main' }}>
+                      <IconButton 
+                        size="small" 
+                        title="View Job Details" 
+                        onClick={() => handleViewJobDetails(app)}
+                        sx={{ 
+                          color: 'primary.main',
+                          '&:hover': {
+                            bgcolor: 'primary.50',
+                            transform: 'scale(1.1)'
+                          }
+                        }}
+                      >
                         <Visibility />
                       </IconButton>
                     </Stack>
@@ -1697,6 +2256,242 @@ function MyApplications() {
           )}
         </DashboardCard>
       </AnimatedBox>
+
+      {/* Job Details Modal */}
+      <Dialog
+        open={jobDetailsModal}
+        onClose={handleCloseJobDetails}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+            maxHeight: '85vh'
+          }
+        }}
+      >
+        {selectedJob && (
+          <>
+            <DialogTitle sx={{ 
+              pb: 1, 
+              borderBottom: '1px solid', 
+              borderColor: 'divider',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              px: 2.5,
+              py: 2
+            }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                Job Details
+              </Typography>
+              <IconButton onClick={handleCloseJobDetails} size="small">
+                <Close />
+              </IconButton>
+            </DialogTitle>
+            
+            <DialogContent sx={{ pt: 2, px: 2.5 }}>
+              <Stack spacing={2.5}>
+                {/* Job Header */}
+                <Box sx={{ 
+                  p: 2, 
+                  bgcolor: 'primary.50', 
+                  borderRadius: 1.5,
+                  borderColor: 'primary.200'
+                }}>
+                  <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main', mb: 1 }}>
+                    {selectedJob.jobTitle || 'Job Title'}
+                  </Typography>
+                  <Typography variant="subtitle1" sx={{ color: 'text.secondary', mb: 1.5 }}>
+                    {selectedJob.companyName || 'Company Name'}
+                  </Typography>
+                  <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                    <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                      <LocationOn sx={{ fontSize: 16, mr: 0.5 }} />
+                      <Typography variant="body2">
+                        {selectedJob.location || 'Location not specified'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                      <Work sx={{ fontSize: 16, mr: 0.5 }} />
+                      <Typography variant="body2">
+                        {selectedJob.jobType || 'Job Type not specified'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                      <TrendingUp sx={{ fontSize: 16, mr: 0.5 }} />
+                      <Typography variant="body2">
+                        {selectedJob.experienceLevel || 'Experience level not specified'}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Box>
+
+                {/* Application Status */}
+                <Box sx={{ 
+                  p: 2, 
+                  bgcolor: 'grey.50', 
+                  borderRadius: 1.5,
+                  border: '1px solid',
+                  borderColor: 'grey.200'
+                }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: 'text.primary' }}>
+                    Application Status
+                  </Typography>
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <StatusChip 
+                      label={selectedJob.application?.status || selectedJob.status || 'Application Sent'} 
+                      status={selectedJob.application?.status || selectedJob.status}
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      Applied on {formatDate(selectedJob.application?.applicationDate || selectedJob.applicationDate)}
+                    </Typography>
+                  </Stack>
+                </Box>
+
+                {/* Job Description */}
+                {selectedJob.description && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: 'text.primary' }}>
+                      Job Description
+                    </Typography>
+                    <Box sx={{ 
+                      p: 2, 
+                      bgcolor: 'grey.50', 
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'grey.200'
+                    }}>
+                      <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
+                        {selectedJob.description}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Requirements */}
+                {selectedJob.requirements && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: 'text.primary' }}>
+                      Requirements
+                    </Typography>
+                    <Box sx={{ 
+                      p: 2, 
+                      bgcolor: 'grey.50', 
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'grey.200'
+                    }}>
+                      <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
+                        {selectedJob.requirements}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Salary Information */}
+                {selectedJob.salary && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: 'text.primary' }}>
+                      Salary Information
+                    </Typography>
+                    <Box sx={{ 
+                      p: 2, 
+                      bgcolor: 'success.50', 
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'success.200'
+                    }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'success.main' }}>
+                        {selectedJob.salary}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Benefits */}
+                {selectedJob.benefits && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: 'text.primary' }}>
+                      Benefits
+                    </Typography>
+                    <Box sx={{ 
+                      p: 2, 
+                      bgcolor: 'info.50', 
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'info.200'
+                    }}>
+                      <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
+                        {selectedJob.benefits}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+
+                {/* Additional Information */}
+                {(selectedJob.industry || selectedJob.department || selectedJob.applicationDeadline || selectedJob.postedDate) && (
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, color: 'text.primary' }}>
+                      Additional Information
+                    </Typography>
+                    <Grid container spacing={1.5}>
+                      {selectedJob.industry && (
+                        <Grid item xs={12} sm={6}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                            <Business sx={{ fontSize: 16, mr: 0.5, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">Industry</Typography>
+                          </Box>
+                          <Typography variant="body2">{selectedJob.industry}</Typography>
+                        </Grid>
+                      )}
+                      {selectedJob.department && (
+                        <Grid item xs={12} sm={6}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                            <AccountTree sx={{ fontSize: 16, mr: 0.5, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">Department</Typography>
+                          </Box>
+                          <Typography variant="body2">{selectedJob.department}</Typography>
+                        </Grid>
+                      )}
+                      {selectedJob.applicationDeadline && (
+                        <Grid item xs={12} sm={6}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                            <Event sx={{ fontSize: 16, mr: 0.5, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">Application Deadline</Typography>
+                          </Box>
+                          <Typography variant="body2">{formatDate(selectedJob.applicationDeadline)}</Typography>
+                        </Grid>
+                      )}
+                      {selectedJob.postedDate && (
+                        <Grid item xs={12} sm={6}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                            <Schedule sx={{ fontSize: 16, mr: 0.5, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">Posted Date</Typography>
+                          </Box>
+                          <Typography variant="body2">{formatDate(selectedJob.postedDate)}</Typography>
+                        </Grid>
+                      )}
+                    </Grid>
+                  </Box>
+                )}
+              </Stack>
+            </DialogContent>
+            
+            <DialogActions sx={{ p: 2, pt: 1 }}>
+              <Button 
+                onClick={handleCloseJobDetails}
+                variant="outlined"
+                size="small"
+                sx={{ borderRadius: 1.5 }}
+              >
+                Close
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </PageContainer>
   )
 }
@@ -1717,6 +2512,7 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
     try {
       const response = await jobAPI.searchJobs(searchQuery)
       setJobs(response || [])
+      console.log("Job Info:", response);
     } catch (error) {
       console.error('Failed to search jobs:', error)
     } finally {
@@ -1752,6 +2548,10 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
     }
   }
 
+  const handleRefreshApplications = async () => {
+    await loadUserApplications()
+  }
+
   const handleViewInterviewDetails = (jobId) => {
     const application = applications.find(app => app.application?.jobPostingId === jobId)
     if (application) {
@@ -1775,6 +2575,7 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
     setApplicationsLoading(true)
     try {
       const response = await applicationAPI.getMyApplicationsWithJobDetails()
+      console.log('DEBUG: Applications data:', response)
       setApplications(response || [])
       
       // Load interview details for applications with INTERVIEW_SCHEDULED status
@@ -1807,6 +2608,7 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
   // Check if user has applied to a specific job
   const getApplicationStatus = (jobId) => {
     const application = applications.find(app => app.application?.jobPostingId === jobId)
+    console.log(`DEBUG: Job ${jobId} - Found application:`, application)
     return application ? application.application.status : null
   }
 
@@ -1815,13 +2617,14 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
     const status = getApplicationStatus(jobId)
     
     switch (status) {
-      case 'RECEIVED':
+      case 'APPLICATION_SENT':
         return {
           variant: 'outlined',
           color: 'info',
-          text: 'Application Received',
+          text: 'Application Sent',
           disabled: true,
-          startIcon: <CheckCircle />
+          startIcon: <CheckCircle />,
+          tooltip: 'Your application has been sent and is being processed'
         }
       case 'UNDER_REVIEW':
         return {
@@ -1829,16 +2632,40 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           color: 'warning',
           text: 'Under Review',
           disabled: true,
-          startIcon: <Assignment />
+          startIcon: <Assignment />,
+          tooltip: 'Your application is currently being reviewed by the employer'
         }
       case 'INTERVIEW_SCHEDULED':
+        // Get the application to find the interview details
+        const application = applications.find(app => app.application?.jobPostingId === jobId)
+        const interview = application ? interviewDetails[application.application?.id] : null
+        
+        // Format the interview date and time if available
+        let buttonText = 'Interview Scheduled'
+        let tooltipText = 'Click to view your scheduled interview details'
+        
+        if (interview && interview.scheduledDateTime) {
+          const interviewDate = new Date(interview.scheduledDateTime)
+          const formattedDate = interviewDate.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric' 
+          })
+          const formattedTime = interviewDate.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
+          buttonText = `📅 ${formattedDate} ${formattedTime}`
+          tooltipText = `Interview scheduled for ${formattedDate} at ${formattedTime}. Click to view full details.`
+        }
+        
         return {
           variant: 'contained',
           color: 'primary',
-          text: 'View Interview Details',
+          text: buttonText,
           disabled: false,
-          startIcon: <Event />,
-          onClick: () => handleViewInterviewDetails(jobId)
+          startIcon: <CalendarToday />,
+          onClick: () => handleViewInterviewDetails(jobId),
+          tooltip: tooltipText
         }
       case 'OFFERED':
         return {
@@ -1846,7 +2673,8 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           color: 'success',
           text: 'Offer Received',
           disabled: true,
-          startIcon: <TrendingUp />
+          startIcon: <TrendingUp />,
+          tooltip: 'Congratulations! You have received a job offer'
         }
       case 'REJECTED':
         return {
@@ -1854,7 +2682,8 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           color: 'error',
           text: 'Application Rejected',
           disabled: true,
-          startIcon: <Close />
+          startIcon: <Close />,
+          tooltip: 'Your application was not selected for this position'
         }
       case 'WITHDRAWN':
         return {
@@ -1862,7 +2691,8 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           color: 'default',
           text: 'Application Withdrawn',
           disabled: true,
-          startIcon: <Close />
+          startIcon: <Close />,
+          tooltip: 'You have withdrawn your application for this position'
         }
       default:
         return {
@@ -1870,7 +2700,8 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           color: 'primary',
           text: 'Apply',
           disabled: false,
-          startIcon: <Send />
+          startIcon: <Send />,
+          tooltip: 'Click to apply for this position'
         }
     }
   }
@@ -1919,9 +2750,18 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
 
       <AnimatedBox animation="fadeInUp" delay={0.4}>
         <DashboardCard>
-          <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-            Available Jobs ({jobs.length})
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Available Jobs ({jobs.length})
+            </Typography>
+            <IconButton 
+              onClick={handleRefreshApplications}
+              disabled={applicationsLoading}
+              sx={{ color: 'primary.main' }}
+            >
+              <Refresh />
+            </IconButton>
+          </Box>
           
           {jobs.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 6 }}>
@@ -1950,7 +2790,7 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
                           <Stack direction="row" alignItems="center" spacing={0.5}>
                             <Business sx={{ fontSize: 16, color: 'text.secondary' }} />
                             <Typography variant="body2">
-                              {job.company || 'Company Name'}
+                              {job.companyName || 'Company Name'}
                             </Typography>
                           </Stack>
                           <Stack direction="row" alignItems="center" spacing={0.5}>
@@ -1981,6 +2821,8 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
                         </Button>
                         {(() => {
                           const buttonProps = getApplyButtonProps(job.id)
+                          const isInterviewButton = buttonProps.text.includes('📅')
+                          
                           return (
                             <Button
                               variant={buttonProps.variant}
@@ -1988,13 +2830,27 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
                               startIcon={buttonProps.startIcon}
                               onClick={buttonProps.onClick || (() => handleApply(job.id))}
                               disabled={buttonProps.disabled}
+                              title={buttonProps.tooltip}
                               sx={{
-                                minWidth: 140,
+                                minWidth: isInterviewButton ? 220 : 140,
                                 fontWeight: 600,
                                 textTransform: 'none',
                                 borderRadius: 2,
                                 px: 3,
-                                py: 1
+                                py: 1,
+                                ...(isInterviewButton && {
+                                  background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+                                  color: 'white',
+                                  boxShadow: '0 4px 12px rgba(25, 118, 210, 0.3)',
+                                  '&:hover': {
+                                    background: 'linear-gradient(135deg, #1565c0 0%, #1976d2 100%)',
+                                    boxShadow: '0 6px 16px rgba(25, 118, 210, 0.4)',
+                                    transform: 'translateY(-1px)'
+                                  },
+                                  '&:active': {
+                                    transform: 'translateY(0)'
+                                  }
+                                })
                               }}
                             >
                               {buttonProps.text}
@@ -2030,7 +2886,8 @@ export default function JobSeekerDashboard() {
     { text: 'Dashboard', icon: <Dashboard />, value: 'dashboard' },
     { text: 'My Profile', icon: <Person />, value: 'profile' },
     { text: 'My Applications', icon: <Assignment />, value: 'applications' },
-    { text: 'Job Search', icon: <Search />, value: 'job-search' }
+    { text: 'Job Search', icon: <Search />, value: 'job-search' },
+    { text: 'Services', icon: <School />, value: 'services' }
   ]
 
   const renderContent = () => {
@@ -2043,6 +2900,8 @@ export default function JobSeekerDashboard() {
         return <MyApplications />
       case 'job-search':
         return <JobSearch setInterviewModal={setInterviewModal} setJobDetailsModal={setJobDetailsModal} />
+      case 'services':
+        return <Services />
       default:
         return <DashboardHome setSelectedTab={setSelectedTab} />
     }
@@ -2276,7 +3135,7 @@ export default function JobSeekerDashboard() {
             Job Details
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {jobDetailsModal.job?.company || 'Company Name'}
+            {jobDetailsModal.job?.companyName || 'Company Name'}
           </Typography>
         </DialogTitle>
         <DialogContent>
@@ -2292,7 +3151,7 @@ export default function JobSeekerDashboard() {
                 <Grid item xs={12} sm={6}>
                   <Typography variant="subtitle2" color="text.secondary">Company</Typography>
                   <Typography variant="body1" sx={{ mb: 2 }}>
-                    {jobDetailsModal.job.company || 'Company Name'}
+                    {jobDetailsModal.job.companyName || 'Company Name'}
                   </Typography>
                 </Grid>
                 
@@ -2347,13 +3206,7 @@ export default function JobSeekerDashboard() {
                   </Grid>
                 )}
                 
-                <Grid item xs={12}>
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    <Typography variant="body2">
-                      <strong>Interested in this position?</strong> Click the Apply button to submit your application.
-                    </Typography>
-                  </Alert>
-                </Grid>
+
               </Grid>
             </Box>
           ) : (
@@ -2368,18 +3221,6 @@ export default function JobSeekerDashboard() {
           <Button onClick={() => setJobDetailsModal({ open: false, job: null })}>
             Close
           </Button>
-          {jobDetailsModal.job && (
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => {
-                handleApply(jobDetailsModal.job.id)
-                setJobDetailsModal({ open: false, job: null })
-              }}
-            >
-              Apply Now
-            </Button>
-          )}
         </DialogActions>
       </Dialog>
     </Box>

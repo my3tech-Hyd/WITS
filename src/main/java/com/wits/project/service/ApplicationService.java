@@ -10,10 +10,12 @@ import org.springframework.stereotype.Service;
 import com.wits.project.model.JobApplication;
 import com.wits.project.model.JobPosting;
 import com.wits.project.model.User;
+import com.wits.project.model.Employer;
 import com.wits.project.model.enums.Enums.JobType;
 import com.wits.project.repository.JobApplicationRepository;
 import com.wits.project.repository.JobPostingRepository;
 import com.wits.project.repository.UserRepository;
+import com.wits.project.repository.EmployerRepository;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -29,6 +31,9 @@ public class ApplicationService {
     
     @Autowired
     private JobPostingRepository jobPostingRepository;
+    
+    @Autowired
+    private EmployerRepository employerRepository;
 
     // Fetch applications with complete user and job data for employers
     public List<ApplicationWithDetails> getApplicationsWithDetails(String jobPostingId) {
@@ -57,8 +62,19 @@ public class ApplicationService {
             // Fetch job details
             JobPosting job = jobPostingRepository.findById(app.getJobPostingId()).orElse(null);
             if (job != null) {
+                // Get company name from job, or fallback to employer's company name
+                String companyName = job.getCompanyName();
+                if (companyName == null || companyName.trim().isEmpty()) {
+                    if (job.getEmployerId() != null) {
+                        Employer employer = employerRepository.findById(job.getEmployerId()).orElse(null);
+                        if (employer != null) {
+                            companyName = employer.getCompanyName();
+                        }
+                    }
+                }
+                
                 details.setJobTitle(job.getTitle());
-                details.setCompanyName(job.getCompanyName());
+                details.setCompanyName(companyName);
                 details.setJobLocation(job.getLocation());
                 details.setJobType(job.getJobType());
                 details.setJobDescription(job.getDescription());
@@ -115,8 +131,38 @@ public class ApplicationService {
             
             if (job != null) {
                 System.out.println("DEBUG: Found job: " + job.getTitle() + " for application: " + app.getId());
+                System.out.println("DEBUG: Job companyName: " + job.getCompanyName());
+                System.out.println("DEBUG: Job employerId: " + job.getEmployerId());
+                
+                // Get company name from job, or fallback to employer's company name
+                String companyName = job.getCompanyName();
+                if (companyName == null || companyName.trim().isEmpty()) {
+                    System.out.println("DEBUG: Job companyName is null/empty, trying to get from employer");
+                    if (job.getEmployerId() != null && !"current".equals(job.getEmployerId())) {
+                        try {
+                            Employer employer = employerRepository.findById(job.getEmployerId()).orElse(null);
+                            if (employer != null) {
+                                companyName = employer.getCompanyName();
+                                System.out.println("DEBUG: Found employer companyName: " + companyName);
+                            } else {
+                                System.out.println("DEBUG: Employer not found for ID: " + job.getEmployerId());
+                                // Try to find by userId if employerId is not working
+                                employer = employerRepository.findByUserId(job.getEmployerId()).orElse(null);
+                                if (employer != null) {
+                                    companyName = employer.getCompanyName();
+                                    System.out.println("DEBUG: Found employer by userId, companyName: " + companyName);
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.out.println("DEBUG: Error finding employer: " + e.getMessage());
+                        }
+                    } else {
+                        System.out.println("DEBUG: Invalid employerId: " + job.getEmployerId());
+                    }
+                }
+                
                 details.setJobTitle(job.getTitle());
-                details.setCompanyName(job.getCompanyName());
+                details.setCompanyName(companyName);
                 details.setLocation(job.getLocation());
                 details.setJobType(job.getJobType());
                 details.setJobDescription(job.getDescription());

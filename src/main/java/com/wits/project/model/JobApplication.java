@@ -7,7 +7,8 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import com.wits.project.model.enums.Enums.ApplicationStatus;
+import com.wits.project.model.enums.Enums.JobApplicationStatus;
+
 
 import lombok.Getter;
 import lombok.Setter;
@@ -29,9 +30,11 @@ public class JobApplication extends BaseDocument {
     private Instant applicationDate;
 
     @Indexed
-    private ApplicationStatus status;
+    private JobApplicationStatus status;
 
     private String notes;
+    
+
 }
 
 

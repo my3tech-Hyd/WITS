@@ -23,6 +23,7 @@ function NavBar() {
   const isJobSeeker = roles.includes('JOB_SEEKER')
   const isEmployer = roles.includes('EMPLOYER')
   const isStaff = roles.includes('STAFF')
+  const isProvider = roles.includes('PROVIDER')
   
   const handleLogout = () => {
     logout()
@@ -97,6 +98,7 @@ function NavBar() {
                 {isJobSeeker && 'Job Seeker Portal'}
                 {isEmployer && 'Employer Portal'}
                 {isStaff && 'Staff Portal'}
+                {isProvider && 'Provider Portal'}
         </Typography>
             </AnimatedBox>
           </Box>
@@ -282,6 +284,8 @@ export default function App() {
               </Container>
             </ProtectedRoute>
           } />
+          
+
           <Route path="/jobs" element={
             <ProtectedRoute>
               <Container maxWidth="xl" sx={{ mt: '90px', mb: 3, px: { xs: 2, md: 3 } }}>

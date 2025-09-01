@@ -3,6 +3,9 @@ package com.wits.project.web;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+
+
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.wits.project.model.JobApplication;
 import com.wits.project.model.Interview;
-import com.wits.project.model.enums.Enums.ApplicationStatus;
+import com.wits.project.model.enums.Enums.JobApplicationStatus;
 import com.wits.project.repository.JobApplicationRepository;
 import com.wits.project.repository.InterviewRepository;
 import com.wits.project.security.SecurityUtil;
@@ -95,9 +98,11 @@ public class ApplicationController {
         a.setUserId(currentUserId);
         a.setJobPostingId(req.jobPostingId);
         a.setApplicationDate(Instant.now());
-        a.setStatus(ApplicationStatus.RECEIVED);
+        a.setStatus(JobApplicationStatus.RECEIVED);
         return ResponseEntity.ok(applications.save(a));
     }
+
+
 
     @PutMapping("/status")
     @PreAuthorize("hasAnyRole('EMPLOYER','STAFF')")
@@ -130,7 +135,7 @@ public class ApplicationController {
         interview.setStatus("SCHEDULED");
         
         // Update application status to INTERVIEW_SCHEDULED
-        application.setStatus(ApplicationStatus.INTERVIEW_SCHEDULED);
+        application.setStatus(JobApplicationStatus.INTERVIEW_SCHEDULED);
         applications.save(application);
         
         return ResponseEntity.ok(interviewRepository.save(interview));
@@ -147,8 +152,8 @@ public class ApplicationController {
 
     // New endpoint: Get all application statuses (for dropdown)
     @GetMapping("/statuses")
-    public ResponseEntity<ApplicationStatus[]> getApplicationStatuses() {
-        return ResponseEntity.ok(ApplicationStatus.values());
+    public ResponseEntity<JobApplicationStatus[]> getApplicationStatuses() {
+        return ResponseEntity.ok(JobApplicationStatus.values());
     }
 
     @Getter
@@ -162,7 +167,7 @@ public class ApplicationController {
     @Setter
     public static class UpdateStatus {
         public String applicationId;
-        public ApplicationStatus status;
+        public JobApplicationStatus status;
     }
 
     @Getter

@@ -300,6 +300,49 @@ export const applicationAPI = {
   }
 }
 
+// Job Seeker Services API
+export const jobSeekerServicesAPI = {
+  // Get all available services
+  getAllServices: async () => {
+    try {
+      const response = await api.get('/jobseeker/services')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get services')
+    }
+  },
+
+  // Apply for a service
+  applyForService: async (serviceId, applicationData) => {
+    try {
+      const response = await api.post(`/jobseeker/services/${serviceId}/apply`, applicationData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to apply for service')
+    }
+  },
+
+  // Update service application
+  updateServiceApplication: async (serviceId, applicationData) => {
+    try {
+      const response = await api.put(`/jobseeker/services/${serviceId}/application`, applicationData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update service application')
+    }
+  },
+
+  // Get my service applications
+  getMyServiceApplications: async () => {
+    try {
+      const response = await api.get('/jobseeker/services/my-applications')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get my service applications')
+    }
+  }
+}
+
 // Document API
 // Document API
 export const documentAPI = {
@@ -489,6 +532,16 @@ export const employerAPI = {
     }
   },
 
+  // Get profile picture URL
+  getProfilePictureUrl: () => {
+    return `${api.defaults.baseURL}/employers/profile/picture/download`
+  },
+
+  // Get company logo URL
+  getCompanyLogoUrl: () => {
+    return `${api.defaults.baseURL}/employers/profile/logo/download`
+  },
+
   // Upload company logo
   uploadCompanyLogo: async (file) => {
     try {
@@ -586,13 +639,173 @@ export const jobSeekerAPI = {
     })
   },
   
+  // Upload profile picture
+  uploadProfilePicture: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/jobseekers/profile/picture', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+
+  // Get profile picture URL
+  getProfilePictureUrl: () => {
+    return `${api.defaults.baseURL}/jobseekers/profile/picture/download`
+  },
+  
   // Search job seekers (for employers)
   searchJobSeekers: (params) => api.get('/jobseekers/search', { params }),
   
   // Get job seeker by ID (for employers)
   getJobSeekerById: (id) => api.get(`/jobseekers/${id}`)
 }
-// Export all APIs
+
+// Provider API
+export const providerAPI = {
+  // Get current user's provider profile
+  getMyProfile: async () => {
+    try {
+      const response = await api.get('/provider/profile')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get provider profile')
+    }
+  },
+
+  // Create provider profile
+  createProfile: async (profileData) => {
+    try {
+      const response = await api.post('/provider/profile', profileData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to create provider profile')
+    }
+  },
+
+  // Update provider profile
+  updateProfile: async (profileData) => {
+    try {
+      const response = await api.put('/provider/profile', profileData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update provider profile')
+    }
+  },
+
+  // Get dashboard statistics
+  getDashboardStats: async () => {
+    try {
+      const response = await api.get('/provider/dashboard/stats')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get dashboard stats')
+    }
+  },
+
+  // Service Management
+  createService: async (serviceData) => {
+    try {
+      const response = await api.post('/provider/services', serviceData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to create service')
+    }
+  },
+
+  updateService: async (serviceId, serviceData) => {
+    try {
+      const response = await api.put(`/provider/services/${serviceId}`, serviceData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update service')
+    }
+  },
+
+  deleteService: async (serviceId) => {
+    try {
+      const response = await api.delete(`/provider/services/${serviceId}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to delete service')
+    }
+  },
+
+  publishService: async (serviceId) => {
+    try {
+      const response = await api.post(`/provider/services/${serviceId}/publish`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to publish service')
+    }
+  },
+
+  getMyServices: async () => {
+    try {
+      const response = await api.get('/provider/services')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get services')
+    }
+  },
+
+  getService: async (serviceId) => {
+    try {
+      const response = await api.get(`/provider/services/${serviceId}`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get service')
+    }
+  },
+
+  // Application Management
+  getServiceApplications: async () => {
+    try {
+      const response = await api.get('/provider/applications')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get applications')
+    }
+  },
+
+  updateApplicationStatus: async (applicationId, statusData) => {
+    try {
+      const response = await api.put(`/provider/applications/${applicationId}/status`, statusData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update application status')
+    }
+  },
+
+  // Messaging
+  sendMessage: async (messageData) => {
+    try {
+      const response = await api.post('/provider/messages', messageData)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to send message')
+    }
+  },
+
+  getMessages: async () => {
+    try {
+      const response = await api.get('/provider/messages')
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to get messages')
+    }
+  },
+
+  markMessageAsRead: async (messageId) => {
+    try {
+      const response = await api.put(`/provider/messages/${messageId}/read`)
+      return response.data
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to mark message as read')
+    }
+  }
+}
 // Export all APIs
 export default {
   auth: authAPI,
@@ -604,5 +817,7 @@ export default {
   roleUtils,
   roleBasedAPI,
   jobSeekerAPI,
-  employerAPI
+  employerAPI,
+  providerAPI,
+  jobSeekerServicesAPI
 }

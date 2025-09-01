@@ -20,6 +20,7 @@ import com.wits.project.model.Employer;
 import com.wits.project.security.SecurityUtil;
 import com.wits.project.service.EmployerService;
 import com.wits.project.service.DocumentService;
+import com.wits.project.service.FileStorageService;
 import com.wits.project.web.dto.EmployerDtos.ProfileResponse;
 import com.wits.project.web.dto.EmployerDtos.ProfileUpdateRequest;
 import com.wits.project.web.dto.EmployerDtos.EmployerSearchRequest;
@@ -37,6 +38,9 @@ public class EmployerController {
     
     @Autowired
     private DocumentService documentService;
+    
+    @Autowired
+    private FileStorageService fileStorageService;
 
     /**
      * Get current user's employer profile
@@ -96,7 +100,7 @@ public class EmployerController {
             com.wits.project.model.ProgramDocument document = documentService.uploadDocument(
                 file, 
                 currentUserId, 
-                com.wits.project.model.enums.Enums.ProgramType.OTHER, 
+                com.wits.project.model.enums.Enums.ProgramType.PROFILE_PICTURE, 
                 "Profile Picture for " + file.getOriginalFilename()
             );
             log.info("Profile picture document created with ID: {}", document.getId());
@@ -259,6 +263,120 @@ public class EmployerController {
             return ResponseEntity.ok(responses);
         } catch (Exception e) {
             log.error("Error getting verified employers: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Download profile picture file
+     */
+    @GetMapping("/profile/picture/download")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadProfilePicture() {
+        try {
+            String currentUserId = SecurityUtil.getCurrentUserId();
+            log.info("Downloading profile picture for user: {}", currentUserId);
+            
+            Optional<Employer> employerOpt = employerService.getEmployerByUserId(currentUserId);
+            if (employerOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            Employer employer = employerOpt.get();
+            String profilePictureDocumentId = employer.getProfilePicture();
+            
+            if (profilePictureDocumentId == null || profilePictureDocumentId.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            // Get the document from ProgramDocument collection
+            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(profilePictureDocumentId);
+            if (documentOpt.isEmpty()) {
+                log.warn("Profile picture document not found with ID: {}", profilePictureDocumentId);
+                return ResponseEntity.notFound().build();
+            }
+            
+            com.wits.project.model.ProgramDocument document = documentOpt.get();
+            
+            // Verify the document belongs to the current user
+            if (!document.getUserId().equals(currentUserId)) {
+                log.warn("Profile picture document does not belong to current user. Document user: {}, current user: {}", 
+                        document.getUserId(), currentUserId);
+                return ResponseEntity.status(403).build();
+            }
+            
+            String filePath = document.getFileId();
+            
+            if (!fileStorageService.fileExists(filePath)) {
+                log.warn("Profile picture file not found at path: {}", filePath);
+                return ResponseEntity.notFound().build();
+            }
+            
+            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
+            
+            return ResponseEntity.ok()
+                .header("Content-Type", document.getFileContentType())
+                .body(resource);
+                
+        } catch (Exception e) {
+            log.error("Error downloading profile picture: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Download company logo file
+     */
+    @GetMapping("/profile/logo/download")
+    public ResponseEntity<org.springframework.core.io.Resource> downloadCompanyLogo() {
+        try {
+            String currentUserId = SecurityUtil.getCurrentUserId();
+            log.info("Downloading company logo for user: {}", currentUserId);
+            
+            Optional<Employer> employerOpt = employerService.getEmployerByUserId(currentUserId);
+            if (employerOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            Employer employer = employerOpt.get();
+            String companyLogoDocumentId = employer.getCompanyLogo();
+            
+            if (companyLogoDocumentId == null || companyLogoDocumentId.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            // Get the document from ProgramDocument collection
+            Optional<com.wits.project.model.ProgramDocument> documentOpt = documentService.getDocumentById(companyLogoDocumentId);
+            if (documentOpt.isEmpty()) {
+                log.warn("Company logo document not found with ID: {}", companyLogoDocumentId);
+                return ResponseEntity.notFound().build();
+            }
+            
+            com.wits.project.model.ProgramDocument document = documentOpt.get();
+            
+            // Verify the document belongs to the current user
+            if (!document.getUserId().equals(currentUserId)) {
+                log.warn("Company logo document does not belong to current user. Document user: {}, current user: {}", 
+                        document.getUserId(), currentUserId);
+                return ResponseEntity.status(403).build();
+            }
+            
+            String filePath = document.getFileId();
+            
+            if (!fileStorageService.fileExists(filePath)) {
+                log.warn("Company logo file not found at path: {}", filePath);
+                return ResponseEntity.notFound().build();
+            }
+            
+            java.nio.file.Path fullPath = fileStorageService.getFilePath(filePath);
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(fullPath.toFile());
+            
+            return ResponseEntity.ok()
+                .header("Content-Type", document.getFileContentType())
+                .body(resource);
+                
+        } catch (Exception e) {
+            log.error("Error downloading company logo: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }

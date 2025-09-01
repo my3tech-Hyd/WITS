@@ -4,6 +4,7 @@ import { Assignment, Event, Business, School, Work, TrendingUp, People, Security
 import { useAuth } from '../context/AuthContext.jsx'
 import EmployerDashboard from './employer/EmployerDashboard.jsx'
 import JobSeekerDashboard from './jobseeker/JobSeekerDashboard.jsx'
+import ProviderDashboard from './provider/ProviderDashboard.jsx'
 import { DashboardCard, AnimatedBox, AnimatedTypography, PageContainer } from '../components/StyledComponents.jsx'
 
 function StaffDashboard() {
@@ -56,7 +57,7 @@ function StaffDashboard() {
   )
 }
 
-function ProviderDashboard() {
+function ProviderDashboardWrapper() {
   return (
     <PageContainer>
       <AnimatedTypography variant="h4" animation="fadeInUp" delay={0.2} sx={{ mb: 4, fontWeight: 700 }}>

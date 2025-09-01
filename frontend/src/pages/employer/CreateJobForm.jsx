@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   Box, 
   Card, 
@@ -17,12 +17,13 @@ import {
 } from '@mui/material'
 import { ArrowBack, Add, Close } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
-import { jobAPI } from '../../api/apiService.js'
+import { jobAPI, employerAPI } from '../../api/apiService.js'
 
 export default function CreateJobForm() {
   const navigate = useNavigate()
   const [form, setForm] = useState({
     title: '',
+    companyName: '',
     description: '',
     jobType: 'FULL_TIME',
     location: '',
@@ -34,6 +35,21 @@ export default function CreateJobForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Load employer profile to get company name
+  useEffect(() => {
+    const loadEmployerProfile = async () => {
+      try {
+        const profile = await employerAPI.getMyProfile()
+        if (profile && profile.companyName) {
+          setForm(prev => ({ ...prev, companyName: profile.companyName }))
+        }
+      } catch (error) {
+        console.error('Failed to load employer profile:', error)
+      }
+    }
+    loadEmployerProfile()
+  }, [])
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -56,6 +72,7 @@ export default function CreateJobForm() {
   const clearForm = () => {
     setForm({
       title: '',
+      companyName: form.companyName, // Keep the company name when clearing
       description: '',
       jobType: 'FULL_TIME',
       location: '',
@@ -131,6 +148,17 @@ export default function CreateJobForm() {
                 required
                 fullWidth
                 placeholder="e.g., Senior Software Engineer"
+              />
+
+              {/* Company Name */}
+              <TextField
+                label="Company Name"
+                name="companyName"
+                value={form.companyName}
+                onChange={handleChange}
+                required
+                fullWidth
+                placeholder="e.g., Tech Solutions Inc."
               />
 
               {/* Job Description */}
@@ -246,7 +274,7 @@ export default function CreateJobForm() {
                 <Button
                   type="submit"
                   variant="contained"
-                  disabled={loading || !form.title || !form.description || !form.location}
+                  disabled={loading || !form.title || !form.companyName || !form.description || !form.location}
                   sx={{ 
                     bgcolor: 'primary.main',
                     '&:hover': { bgcolor: 'primary.dark' }
