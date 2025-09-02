@@ -103,7 +103,7 @@ public class JobSeekerController {
                     file.getOriginalFilename(), file.getSize(), file.getContentType());
 
             // Upload document and create or update ProgramDocument record
-            com.wits.project.model.ProgramDocument document = documentService.uploadOrUpdateDocument(
+            com.wits.project.model.ProgramDocument document = documentService.uploadDocument(
                 file, 
                 currentUserId, 
                 com.wits.project.model.enums.Enums.ProgramType.RESUME, 

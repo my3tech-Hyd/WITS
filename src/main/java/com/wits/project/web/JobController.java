@@ -18,10 +18,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.wits.project.model.JobPosting;
+import com.wits.project.model.ProgramDocument;
+import com.wits.project.feign.ModelFeign;
 import com.wits.project.model.Employer;
 import com.wits.project.model.enums.Enums.JobStatus;
 import com.wits.project.model.enums.Enums.JobType;
 import com.wits.project.repository.JobPostingRepository;
+import com.wits.project.repository.ProgramDocumentRepository;
 import com.wits.project.repository.EmployerRepository;
 import com.wits.project.security.SecurityUtil;
 import com.wits.project.service.ApplicationService;
@@ -39,6 +42,8 @@ public class JobController {
     private final JobPostingRepository jobs;
     private final EmployerRepository employerRepository;
     private final ApplicationService applicationService;
+    private final ModelFeign modelFeign;
+    private final ProgramDocumentRepository programDocumentRepository;
 
     @PostMapping
     @PreAuthorize("hasRole('EMPLOYER')")
@@ -181,6 +186,25 @@ public class JobController {
             return ResponseEntity.ok(jobs.findAll());
         }
         return ResponseEntity.ok(jobs.findByTitleContainingIgnoreCase(q));
+    }
+
+    @GetMapping("/testJobs")
+    public ResponseEntity<?> searchAI(@RequestParam(required = false) String q) {
+        // if (q == null || q.isBlank()) {
+        //     return ResponseEntity.ok(jobs.findAll());
+        // }
+        // return ResponseEntity.ok(jobs.findByTitleContainingIgnoreCase(q));
+        String currentUserId = SecurityUtil.getCurrentUserId();
+        var documentsForUser =  programDocumentRepository.findByUserIdOrderByCreatedAtDesc(currentUserId);
+        
+        if(documentsForUser.size() == 0) {
+            return ResponseEntity.ok("No resume uploaded");
+        }
+        var resume = documentsForUser.get(0);
+        var result = modelFeign.resumeToJobPosting(resume.getFileId());
+        System.out.println("DEBUG: Result: " + result);
+        return ResponseEntity.ok(result);
+        // return modelFeign.resumeToJobPosting(resume.getFileId());
     }
 
     @Getter

@@ -62,6 +62,8 @@ import {
   AccountTree,
   AccessTime,
   CalendarToday,
+  Clear,
+  List as ListIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import {
@@ -138,7 +140,7 @@ function DashboardHome({ setSelectedTab }) {
           const applications = applicationsResponse || [];
 
           const jobsResponse = await jobAPI.getAllJobs();
-          const jobs = jobsResponse || [];
+          const jobs = jobsResponse?.body?.data || [];
 
           const jobApplicationMap = new Map();
           applications.forEach((app) => {
@@ -185,7 +187,7 @@ function DashboardHome({ setSelectedTab }) {
 
         // Load recent jobs
         const jobsResponse = await jobAPI.getAllJobs();
-        const jobs = jobsResponse || [];
+        const jobs = jobsResponse?.body?.data || [];
         console.log("DEBUG: Jobs data:", jobs);
 
         // Create a map of job IDs to application status
@@ -389,7 +391,7 @@ function DashboardHome({ setSelectedTab }) {
                         const applications = applicationsResponse || [];
 
                         const jobsResponse = await jobAPI.getAllJobs();
-                        const jobs = jobsResponse || [];
+                        const jobs = jobsResponse?.body?.data || [];
 
                         const jobApplicationMap = new Map();
                         applications.forEach((app) => {
@@ -3234,32 +3236,116 @@ function MyApplications() {
 // Job Search Component
 function JobSearch({ setInterviewModal, setJobDetailsModal }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
   const [jobs, setJobs] = useState([]);
+  const [allJobs, setAllJobs] = useState([]); // Store all jobs for filtering
   const [loading, setLoading] = useState(false);
   const [applications, setApplications] = useState([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [interviewDetails, setInterviewDetails] = useState({});
 
-  const searchJobs = async () => {
-    if (!searchQuery.trim()) return;
+  // const searchJobs = () => {
+  //   if (
+  //     !searchQuery.trim() &&
+  //     !companyFilter.trim() &&
+  //     !locationFilter.trim()
+  //   ) {
+  //     // If no filters, show all jobs
+  //     setJobs(allJobs);
+  //     return;
+  //   }
+
+  //   setLoading(true);
+
+  //   // Filter jobs based on search criteria
+  //   const filteredJobs = allJobs.filter((job) => {
+  //     const titleMatch =
+  //       !searchQuery.trim() ||
+  //       job.title?.toLowerCase().includes(searchQuery.toLowerCase());
+
+  //     const companyMatch =
+  //       !companyFilter.trim() ||
+  //       job.company?.toLowerCase().includes(companyFilter.toLowerCase());
+
+  //     const locationMatch =
+  //       !locationFilter.trim() ||
+  //       job.location?.toLowerCase().includes(locationFilter.toLowerCase());
+
+  //     return titleMatch && companyMatch && locationMatch;
+  //   });
+
+  //   setJobs(filteredJobs);
+  //   setLoading(false);
+  // };
+
+  // Real-time search as user types
+  const handleSearchChange = (field, value) => {
+    if (field === "title") setSearchQuery(value);
+    if (field === "company") setCompanyFilter(value);
+    if (field === "location") setLocationFilter(value);
+
+    // Trigger search after a short delay
+    setTimeout(() => {
+      searchJobs();
+    }, 300);
+  };
+
+  // Enhanced search function that searches across all fields
+  const searchJobs = () => {
+    if (
+      !searchQuery.trim() &&
+      !companyFilter.trim() &&
+      !locationFilter.trim()
+    ) {
+      // If no filters, show all jobs
+      setJobs(allJobs);
+      return;
+    }
 
     setLoading(true);
-    try {
-      const response = await jobAPI.searchJobs(searchQuery);
-      setJobs(response || []);
-      console.log("Job Info:", response);
-    } catch (error) {
-      console.error("Failed to search jobs:", error);
-    } finally {
-      setLoading(false);
-    }
+
+    // Filter jobs based on search criteria
+    const filteredJobs = allJobs.filter((job) => {
+      // General search across all fields
+      const generalSearch =
+        !searchQuery.trim() ||
+        job.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        job.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        job.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        job.description?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      // Specific filters
+      const companyMatch =
+        !companyFilter.trim() ||
+        job.company?.toLowerCase().includes(companyFilter.toLowerCase());
+
+      const locationMatch =
+        !locationFilter.trim() ||
+        job.location?.toLowerCase().includes(locationFilter.toLowerCase());
+
+      return generalSearch && companyMatch && locationMatch;
+    });
+
+    setJobs(filteredJobs);
+    setLoading(false);
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setCompanyFilter("");
+    setLocationFilter("");
+    setJobs(allJobs);
   };
 
   const loadAllJobs = async () => {
     setLoading(true);
     try {
       const response = await jobAPI.getAllJobs();
-      setJobs(response || []);
+      const jobsData = response?.body?.data || [];
+      setAllJobs(jobsData); // Store all jobs for filtering
+      setJobs(jobsData); // Set current jobs to all jobs
+      console.log("All Jobs:", response);
     } catch (error) {
       console.error("Failed to load jobs:", error);
     } finally {
@@ -3468,17 +3554,14 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
             Find Your Next Opportunity
           </Typography>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            alignItems="center"
-          >
+          <Stack spacing={3}>
+            {/* General Search Field */}
             <TextField
-              label="Search jobs"
+              label="Search across all fields"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="e.g., Software Engineer, Marketing Manager..."
-              sx={{ flexGrow: 1 }}
+              onChange={(e) => handleSearchChange("title", e.target.value)}
+              placeholder="Search by job title, company, location, or any keyword..."
+              sx={{ width: "100%" }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -3487,15 +3570,131 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
                 ),
               }}
             />
-            <PrimaryButton
-              onClick={searchJobs}
-              disabled={loading || !searchQuery.trim()}
+
+            {/* Specific Filters Row */}
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              alignItems="center"
             >
-              {loading ? "Searching..." : "Search"}
-            </PrimaryButton>
-            <SecondaryButton onClick={loadAllJobs} disabled={loading}>
-              View All
-            </SecondaryButton>
+              <TextField
+                label="Job Title"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange("title", e.target.value)}
+                placeholder="e.g., Software Engineer, Marketing Manager..."
+                sx={{ flexGrow: 1, minWidth: 200 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <TextField
+                label="Company"
+                value={companyFilter}
+                onChange={(e) => handleSearchChange("company", e.target.value)}
+                placeholder="e.g., Google, Microsoft..."
+                sx={{ minWidth: 150 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Business />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <TextField
+                label="Location"
+                value={locationFilter}
+                onChange={(e) => handleSearchChange("location", e.target.value)}
+                placeholder="e.g., New York, Remote..."
+                sx={{ minWidth: 150 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LocationOn />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Stack>
+
+            {/* Action Buttons Row */}
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems="center"
+              justifyContent="center"
+            >
+              <PrimaryButton
+                onClick={searchJobs}
+                disabled={
+                  loading ||
+                  (!searchQuery.trim() &&
+                    !companyFilter.trim() &&
+                    !locationFilter.trim())
+                }
+                startIcon={<Search />}
+              >
+                {loading ? "Searching..." : "Search Jobs"}
+              </PrimaryButton>
+              <SecondaryButton onClick={clearFilters} startIcon={<Clear />}>
+                Clear Filters
+              </SecondaryButton>
+              <SecondaryButton
+                onClick={loadAllJobs}
+                disabled={loading}
+                startIcon={<ListIcon />}
+              >
+                View All Jobs
+              </SecondaryButton>
+            </Stack>
+
+            {/* Active Filters Display */}
+            {(searchQuery.trim() ||
+              companyFilter.trim() ||
+              locationFilter.trim()) && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: "grey.50", borderRadius: 1 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mb: 1 }}
+                >
+                  Active Filters:
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  {searchQuery.trim() && (
+                    <Chip
+                      label={`Title: ${searchQuery}`}
+                      size="small"
+                      onDelete={() => handleSearchChange("title", "")}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  )}
+                  {companyFilter.trim() && (
+                    <Chip
+                      label={`Company: ${companyFilter}`}
+                      size="small"
+                      onDelete={() => handleSearchChange("company", "")}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  )}
+                  {locationFilter.trim() && (
+                    <Chip
+                      label={`Location: ${locationFilter}`}
+                      size="small"
+                      onDelete={() => handleSearchChange("location", "")}
+                      color="primary"
+                      variant="outlined"
+                    />
+                  )}
+                </Stack>
+              </Box>
+            )}
           </Stack>
         </DashboardCard>
       </AnimatedBox>
@@ -3512,6 +3711,16 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
           >
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
               Available Jobs ({jobs.length})
+              {allJobs.length > 0 && jobs.length !== allJobs.length && (
+                <Typography
+                  component="span"
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ ml: 1, fontWeight: 400 }}
+                >
+                  (filtered from {allJobs.length} total)
+                </Typography>
+              )}
             </Typography>
             <IconButton
               onClick={handleRefreshApplications}
@@ -3528,11 +3737,18 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
               <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
                 {loading ? "Loading jobs..." : "No jobs found"}
               </Typography>
-              <Typography variant="body1" color="text.secondary">
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
                 {loading
                   ? "Please wait while we fetch available positions."
-                  : "Try adjusting your search criteria."}
+                  : allJobs.length > 0
+                  ? "Try adjusting your search criteria or clear filters to see all available jobs."
+                  : "No jobs are currently available."}
               </Typography>
+              {!loading && allJobs.length > 0 && (
+                <SecondaryButton onClick={clearFilters} startIcon={<Clear />}>
+                  Clear All Filters
+                </SecondaryButton>
+              )}
             </Box>
           ) : (
             <Stack spacing={3}>
@@ -3577,7 +3793,7 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
                               sx={{ fontSize: 16, color: "text.secondary" }}
                             />
                             <Typography variant="body2">
-                              {job.companyName || "Company Name"}
+                              {job.company || "Company Name"}
                             </Typography>
                           </Stack>
                           <Stack
@@ -3592,8 +3808,9 @@ function JobSearch({ setInterviewModal, setJobDetailsModal }) {
                               {job.location}
                             </Typography>
                           </Stack>
+                          Matching Percentage:
                           <Chip
-                            label={job.jobType || "Full Time"}
+                            label={job.match_pct || "Full Time"}
                             size="small"
                           />
                         </Stack>

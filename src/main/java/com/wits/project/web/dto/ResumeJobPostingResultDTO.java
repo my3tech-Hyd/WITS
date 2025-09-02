@@ -2,11 +2,13 @@ package com.wits.project.web.dto;
 
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 
 @Getter
 @Setter
+@ToString
 public class ResumeJobPostingResultDTO {
-    private Double matchPct;
+    private Double match_pct;
     private String title;
     private String company;
     private String location;
