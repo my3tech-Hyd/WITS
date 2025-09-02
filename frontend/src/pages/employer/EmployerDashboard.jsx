@@ -114,18 +114,29 @@ function DashboardHome() {
 
         // Get jobs and applications data
         const [jobsResponse, applicationsResponse] = await Promise.all([
-          jobAPI.getAllJobs(),
+          jobAPI.getEmployerJobs(),
           applicationAPI.listApplications(),
         ]);
 
+        // getEmployerJobs returns a simple array, listApplications might have nested structure
         const jobs = jobsResponse || [];
-        const applications = applicationsResponse || [];
+        const applications = Array.isArray(applicationsResponse)
+          ? applicationsResponse
+          : applicationsResponse?.body?.data ||
+            applicationsResponse?.data ||
+            [];
+
+        // Ensure jobs and applications are arrays before processing
+        const jobsArray = Array.isArray(jobs) ? jobs : [];
+        const applicationsArray = Array.isArray(applications)
+          ? applications
+          : [];
 
         setStats({
-          totalJobs: jobs.length,
-          totalApplications: applications.length,
-          activeJobs: jobs.filter((job) => job.status === "ACTIVE").length,
-          recentApplications: applications.filter((app) => {
+          totalJobs: jobsArray.length,
+          totalApplications: applicationsArray.length,
+          activeJobs: jobsArray.filter((job) => job.status === "ACTIVE").length,
+          recentApplications: applicationsArray.filter((app) => {
             const appDate = new Date(app.applicationDate);
             const weekAgo = new Date();
             weekAgo.setDate(weekAgo.getDate() - 7);
@@ -6058,13 +6069,13 @@ function MyCompany() {
         // Load stats
         try {
           const jobsResponse = await jobAPI.getEmployerJobs();
-          const activeJobs = jobsResponse.filter(
+          const activeJobs = (jobsResponse || []).filter(
             (job) => job.status === "ACTIVE"
           ).length;
 
           // Get total applications by fetching applications for each job
           let totalApplications = 0;
-          for (const job of jobsResponse) {
+          for (const job of jobsResponse || []) {
             try {
               const jobApplications =
                 await applicationAPI.getJobApplicationsWithUserDetails(job.id);
@@ -7291,6 +7302,8 @@ export default function EmployerDashboard() {
               width: drawerWidth,
               top: "70px",
               height: "calc(100% - 70px)",
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
             },
           }}
         >
@@ -7305,6 +7318,8 @@ export default function EmployerDashboard() {
               width: drawerWidth,
               top: "70px",
               height: "calc(100% - 70px)",
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
             },
           }}
           open

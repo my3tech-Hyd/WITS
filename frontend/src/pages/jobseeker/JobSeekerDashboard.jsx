@@ -4045,6 +4045,8 @@ export default function JobSeekerDashboard() {
               width: drawerWidth,
               top: "70px",
               height: "calc(100% - 70px)",
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
             },
           }}
         >
@@ -4059,6 +4061,8 @@ export default function JobSeekerDashboard() {
               width: drawerWidth,
               top: "70px",
               height: "calc(100% - 70px)",
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
             },
           }}
           open
